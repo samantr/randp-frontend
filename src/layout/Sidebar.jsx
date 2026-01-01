@@ -6,9 +6,10 @@ const nav = [
   { to: "/persons", label: "اشخاص" },
   { to: "/item-categories", label: "دسته‌بندی‌ها" },
   { to: "/items", label: "کالا/خدمات" },
+  { to: "/units", label: "واحدها" },
   { to: "/projects", label: "پروژه‌ها" },
+  { to: "/debts", label: "بدهی‌ها" },
   { to: "/transactions", label: "تراکنش‌ها" },
-
 ];
 
 export default function Sidebar({ collapsed, onToggle }) {

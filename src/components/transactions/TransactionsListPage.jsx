@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import Button from "../common/Button";
 import FiltersBar from "../table/FiltersBar";
 import DataTable from "../table/DataTable";
@@ -6,7 +7,11 @@ import Pagination from "../table/Pagination";
 import ConfirmDialog from "../common/ConfirmDialog";
 import toast from "react-hot-toast";
 
-import { deleteTransaction, getTransactionById, getTransactions } from "../../api/transactionsApi";
+import {
+  deleteTransaction,
+  getTransactionById,
+  getTransactions,
+} from "../../api/transactionsApi";
 import QuickAddTransactionModal from "./QuickAddTransactionModal";
 import EditTransactionModal from "./EditTransactionModal";
 
@@ -40,7 +45,13 @@ function transactionTypeLabel(code) {
   return code || "-";
 }
 
+function moneyFa(v) {
+  return Number(v || 0).toLocaleString("fa-IR");
+}
+
 export default function TransactionsListPage() {
+  const navigate = useNavigate();
+
   const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [size] = useState(20);
@@ -71,7 +82,8 @@ export default function TransactionsListPage() {
 
     try {
       const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
-      const projects = normalizePageLike(projectsRes).content || projectsRes || [];
+      const projects =
+        normalizePageLike(projectsRes).content || projectsRes || [];
       const pr = {};
       for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
       setProjectsMap(pr);
@@ -115,7 +127,11 @@ export default function TransactionsListPage() {
     () => [
       { key: "id", title: "ID", render: (r) => r.id },
 
-      { key: "code", title: "کد", render: (r) => <span className="font-semibold">{r.code || "-"}</span> },
+      {
+        key: "code",
+        title: "کد",
+        render: (r) => <span className="font-semibold">{r.code || "-"}</span>,
+      },
 
       {
         key: "project",
@@ -152,14 +168,32 @@ export default function TransactionsListPage() {
       {
         key: "amountPaid",
         title: "مبلغ",
-        render: (r) => (r.amountPaid != null ? Number(r.amountPaid).toLocaleString("fa-IR") : "-"),
+        render: (r) => (r.amountPaid != null ? moneyFa(r.amountPaid) : "-"),
+      },
+
+      // ✅ NEW
+      {
+        key: "allocatedAmount",
+        title: "تخصیص",
+        render: (r) =>
+          r.allocatedAmount != null ? moneyFa(r.allocatedAmount) : "-",
+      },
+
+      // ✅ NEW
+      {
+        key: "remainingAmount",
+        title: "مانده",
+        render: (r) =>
+          r.remainingAmount != null ? moneyFa(r.remainingAmount) : "-",
       },
 
       {
         key: "paymentType",
         title: "نوع پرداخت",
         render: (r) => (
-          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">{paymentTypeLabel(r.paymentType)}</span>
+          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">
+            {paymentTypeLabel(r.paymentType)}
+          </span>
         ),
       },
 
@@ -167,14 +201,19 @@ export default function TransactionsListPage() {
         key: "transactionType",
         title: "نوع تراکنش",
         render: (r) => (
-          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">{transactionTypeLabel(r.transactionType)}</span>
+          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">
+            {transactionTypeLabel(r.transactionType)}
+          </span>
         ),
       },
 
       {
         key: "dateRegistered",
         title: "ثبت",
-        render: (r) => (r.dateRegistered ? r.dateRegistered.replace("T", " ").substring(0, 16) : "-"),
+        render: (r) =>
+          r.dateRegistered
+            ? r.dateRegistered.replace("T", " ").substring(0, 16)
+            : "-",
       },
 
       { key: "dsc", title: "توضیحات", render: (r) => r.dsc || "-" },
@@ -184,6 +223,19 @@ export default function TransactionsListPage() {
         title: "عملیات",
         render: (r) => (
           <div className="flex gap-2">
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/transactions/${r.id}/allocations`)}
+            >
+              تخصیص‌ها
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => navigate(`/transactions/${r.id}/documents`)}
+            >
+              پیوست‌ها
+            </Button>
+
             <Button
               variant="secondary"
               onClick={async () => {
@@ -212,7 +264,7 @@ export default function TransactionsListPage() {
         ),
       },
     ],
-    [personsMap, projectsMap]
+    [personsMap, projectsMap, navigate]
   );
 
   async function handleDelete() {
@@ -253,10 +305,18 @@ export default function TransactionsListPage() {
       </div>
 
       <div className="mb-3">
-        <DataTable columns={columns} rows={data.content || []} loading={loading} />
+        <DataTable
+          columns={columns}
+          rows={data.content || []}
+          loading={loading}
+        />
       </div>
 
-      <Pagination page={page} totalPages={data.totalPages || 0} onPage={setPage} />
+      <Pagination
+        page={page}
+        totalPages={data.totalPages || 0}
+        onPage={setPage}
+      />
 
       <ConfirmDialog
         open={deleteId !== null}
@@ -270,7 +330,6 @@ export default function TransactionsListPage() {
         open={quickAddOpen}
         onClose={() => setQuickAddOpen(false)}
         onCreated={async () => {
-          // بعد از ثبت، lookup ها refresh تا اسم‌ها درست نمایش داده شوند
           await loadLookups();
           setQ("");
           setPage(0);
