@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { getItemCategories, updateItemCategory } from "../../api/itemCategoriesApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function EditItemCategoryModal({
   open,
@@ -61,13 +62,13 @@ export default function EditItemCategoryModal({
     };
 
     if (!payload.title) {
-      toast.error("عنوان را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان را وارد کنید"));
       return;
     }
 
     // prevent self parent
     if (payload.parentId && payload.parentId === category.id) {
-      toast.error("والد نمی‌تواند خودِ دسته‌بندی باشد");
+      toast.error(getApiErrorMessage(e, "والد نمی‌تواند خودِ دسته‌بندی باشد"));
       return;
     }
 
@@ -77,7 +78,7 @@ export default function EditItemCategoryModal({
       onUpdated?.(updated);
       onClose?.();
     } catch (e) {
-      toast.error("خطا در ویرایش");
+      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     }
   }
 

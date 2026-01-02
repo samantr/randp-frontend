@@ -12,6 +12,7 @@ import {
 } from "../../api/itemCategoriesApi";
 import QuickAddItemCategoryModal from "./QuickAddItemCategoryModal";
 import EditItemCategoryModal from "./EditItemCategoryModal";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 function buildTree(all) {
   const byId = new Map();
@@ -102,7 +103,7 @@ export default function ItemCategoriesListPage() {
         return collectAllIds(res || []);
       });
     } catch (e) {
-      toast.error("خطا در دریافت لیست");
+      toast.error(getApiErrorMessage(e, "خطا در دریافت لیست"));
     } finally {
       setLoading(false);
     }
@@ -154,7 +155,7 @@ export default function ItemCategoriesListPage() {
 
       await load();
     } catch {
-      toast.error("خطا در حذف");
+      toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }
 
@@ -260,7 +261,7 @@ export default function ItemCategoriesListPage() {
                                 const fresh = await getItemCategoryById(r.id);
                                 setEditingCategory(fresh);
                               } catch {
-                                toast.error("خطا در دریافت اطلاعات");
+                                toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات"));
                                 setEditOpen(false);
                               } finally {
                                 setEditLoading(false);

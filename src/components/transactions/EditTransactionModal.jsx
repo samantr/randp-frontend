@@ -159,7 +159,7 @@ export default function EditTransactionModal({
     if (!transaction?.id) return;
 
     if (Object.keys(errors).length > 0) {
-      toast.error("اطلاعات را کامل کنید");
+      toast.error(getApiErrorMessage(e, "اطلاعات را کامل کنید"));
       return;
     }
 
@@ -183,7 +183,7 @@ export default function EditTransactionModal({
       onClose?.();
       await onUpdated?.();
     } catch {
-      toast.error("خطا در ویرایش");
+      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     } finally {
       setSaving(false);
     }

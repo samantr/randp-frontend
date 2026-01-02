@@ -6,6 +6,8 @@ import Input from "../common/Input";
 import toast from "react-hot-toast";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { createPerson, searchPersons } from "../../api/personsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+
 
 /**
  * Backend contract (PersonResponse):
@@ -125,12 +127,12 @@ export default function QuickAddPersonModal({
     // Validation (minimal)
     if (payload.isLegal) {
       if (!payload.companyName) {
-        toast.error("نام سازمان را وارد کنید");
+        toast.error(getApiErrorMessage(e, "نام سازمان را وارد کنید"));
         return;
       }
     } else {
       if (!payload.name && !payload.lastName) {
-        toast.error("نام یا نام خانوادگی را وارد کنید");
+        toast.error(getApiErrorMessage(e, "نام یا نام خانوادگی را وارد کنید"));
         return;
       }
     }
@@ -152,7 +154,7 @@ export default function QuickAddPersonModal({
 
       onClose?.();
     } catch (e) {
-      toast.error("خطا در ثبت شخص");
+      toast.error(getApiErrorMessage(e, "خطا در ثبت شخص"));
     }
   }
 

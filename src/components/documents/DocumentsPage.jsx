@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import Button from "../common/Button";
 import Input from "../common/Input";
 import ConfirmDialog from "../common/ConfirmDialog";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 import {
   listDebtDocuments,
@@ -128,7 +129,7 @@ export default function DocumentsPage({ ownerType }) {
       const data = await cfg.list(ownerId);
       setRows(Array.isArray(data) ? data : []);
     } catch {
-      toast.error("خطا در دریافت لیست پیوست‌ها");
+      toast.error(getApiErrorMessage(e, "خطا در دریافت لیست پیوست‌ها"));
       setRows([]);
     } finally {
       setLoading(false);
@@ -143,7 +144,7 @@ export default function DocumentsPage({ ownerType }) {
     if (!ownerId) return;
 
     if (!file) {
-      toast.error("لطفاً فایل را انتخاب کنید");
+      toast.error(getApiErrorMessage(e, "لطفاً فایل را انتخاب کنید"));
       return;
     }
     if (file.size > MAX_FILE_BYTES) {
@@ -182,7 +183,7 @@ export default function DocumentsPage({ ownerType }) {
         a.remove();
         window.URL.revokeObjectURL(url);
       } catch {
-        toast.error("خطا در دانلود فایل");
+        toast.error(getApiErrorMessage(e, "خطا در دانلود فایل"));
       }
     },
     [cfg]
@@ -203,7 +204,7 @@ export default function DocumentsPage({ ownerType }) {
         const type = canPreview(mime, fileName);
 
         if (!type) {
-          toast.error("پیش‌نمایش برای این نوع فایل فعال نیست");
+          toast.error(getApiErrorMessage(e, "پیش‌نمایش برای این نوع فایل فعال نیست"));
           return;
         }
 
@@ -216,7 +217,7 @@ export default function DocumentsPage({ ownerType }) {
           title: fileName,
         });
       } catch {
-        toast.error("خطا در دریافت فایل برای پیش‌نمایش");
+        toast.error(getApiErrorMessage(e, "خطا در دریافت فایل برای پیش‌نمایش"));
       }
     },
     [cfg, cleanupPreview]

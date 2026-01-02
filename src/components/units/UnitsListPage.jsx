@@ -9,6 +9,7 @@ import { deleteUnit, getUnitById, getUnits } from "../../api/unitsApi";
 import QuickAddUnitModal from "./QuickAddUnitModal";
 import EditUnitModal from "./EditUnitModal";
 import { normalizeFaText } from "../../utils/normalizeFa";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function UnitsListPage() {
   const [q, setQ] = useState("");
@@ -32,7 +33,7 @@ export default function UnitsListPage() {
       const res = await getUnits();
       setAllRows(Array.isArray(res) ? res : []);
     } catch (e) {
-      toast.error("خطا در دریافت لیست");
+      toast.error(getApiErrorMessage(e, "خطا در دریافت لیست"));
     } finally {
       setLoading(false);
     }
@@ -96,7 +97,7 @@ export default function UnitsListPage() {
                   const fresh = await getUnitById(r.id);
                   setEditingUnit(fresh);
                 } catch (e) {
-                  toast.error("خطا در دریافت اطلاعات واحد");
+                  toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات واحد"));
                   setEditOpen(false);
                 } finally {
                   setEditLoading(false);
@@ -123,7 +124,7 @@ export default function UnitsListPage() {
 
       await load();
     } catch {
-      toast.error("خطا در حذف");
+      toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }
 

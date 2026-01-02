@@ -7,6 +7,7 @@ import LookupSelect from "../lookup/LookupSelect";
 import { updateItem } from "../../api/itemsApi";
 import { getItemCategories } from "../../api/itemCategoriesApi";
 import { normalizeFaText } from "../../utils/normalizeFa";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function EditItemModal({
   open,
@@ -68,15 +69,15 @@ export default function EditItemModal({
     };
 
     if (!payload.categoryId) {
-      toast.error("دسته‌بندی را انتخاب کنید");
+      toast.error(getApiErrorMessage(e, "دسته‌بندی را انتخاب کنید"));
       return;
     }
     if (!payload.code) {
-      toast.error("کد را وارد کنید");
+      toast.error(getApiErrorMessage(e, "کد را وارد کنید"));
       return;
     }
     if (!payload.title) {
-      toast.error("عنوان را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان را وارد کنید"));
       return;
     }
 
@@ -86,7 +87,7 @@ export default function EditItemModal({
       onUpdated?.(updated);
       onClose?.();
     } catch {
-      toast.error("خطا در ویرایش");
+      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     }
   }
 

@@ -16,6 +16,7 @@ import {
   deleteAllocationFromTransaction,
   listDebtCandidatesForTransaction,
 } from "../../api/transactionAllocationsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 function moneyFa(v) {
   return Number(v || 0).toLocaleString("fa-IR");
@@ -97,7 +98,7 @@ export default function TransactionAllocationsPage() {
       const t = await getTransactionById(transactionId);
       setTx(t);
     } catch {
-      toast.error("خطا در دریافت اطلاعات تراکنش");
+      toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات تراکنش"));
       setTx(null);
     } finally {
       setLoadingHeader(false);
@@ -111,7 +112,7 @@ export default function TransactionAllocationsPage() {
       const data = await listAllocationsByTransaction(transactionId);
       setRows(Array.isArray(data) ? data : []);
     } catch {
-      toast.error("خطا در دریافت تخصیص‌ها");
+      toast.error(getApiErrorMessage(e, "خطا در دریافت تخصیص‌ها"));
       setRows([]);
     } finally {
       setLoading(false);
@@ -142,18 +143,18 @@ export default function TransactionAllocationsPage() {
     const dId = Number(debtId);
     const a = Number(amount);
 
-    if (!Number.isFinite(dId) || dId <= 0) return toast.error("بدهی را انتخاب کنید");
-    if (!Number.isFinite(a) || a <= 0) return toast.error("مبلغ نامعتبر است");
+    if (!Number.isFinite(dId) || dId <= 0) return toast.error(getApiErrorMessage(e, "بدهی را انتخاب کنید"));
+    if (!Number.isFinite(a) || a <= 0) return toast.error(getApiErrorMessage(e, "مبلغ نامعتبر است"));
 
     // ✅ debt remaining validation
     const d = debtMap[dId];
     if (d && a > Number(d.remainingAmount || 0)) {
-      return toast.error("مبلغ تخصیص نمی‌تواند بیشتر از مانده بدهی باشد");
+      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص نمی‌تواند بیشتر از مانده بدهی باشد"));
     }
 
     // ✅ transaction remaining validation
     if (tx && a > Number(tx.remainingAmount || 0)) {
-      return toast.error("مبلغ تخصیص نمی‌تواند بیشتر از مانده تراکنش باشد");
+      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص نمی‌تواند بیشتر از مانده تراکنش باشد"));
     }
 
     try {
@@ -170,7 +171,7 @@ export default function TransactionAllocationsPage() {
       await loadAllocations();
       await loadCandidates();
     } catch {
-      toast.error("خطا در ثبت تخصیص");
+      toast.error(getApiErrorMessage(e, "خطا در ثبت تخصیص"));
     }
   }
 
@@ -200,19 +201,19 @@ export default function TransactionAllocationsPage() {
     const dId = Number(editDebtId);
     const a = Number(editAmount);
 
-    if (!Number.isFinite(dId) || dId <= 0) return toast.error("بدهی را انتخاب کنید");
-    if (!Number.isFinite(a) || a <= 0) return toast.error("مبلغ نامعتبر است");
+    if (!Number.isFinite(dId) || dId <= 0) return toast.error(getApiErrorMessage(e, "بدهی را انتخاب کنید"));
+    if (!Number.isFinite(a) || a <= 0) return toast.error(getApiErrorMessage(e, "مبلغ نامعتبر است"));
 
     const d = editDebtMap[dId];
     if (d && a > Number(d.editableRemainingAmount || 0)) {
-      return toast.error("مبلغ تخصیص بیشتر از مانده قابل ویرایش بدهی است");
+      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص بیشتر از مانده قابل ویرایش بدهی است"));
     }
 
     // ✅ transaction remaining validation (client-side)
     // (for edit mode: tx.remainingAmount already includes existing allocations in backend,
     // but we still keep this basic check)
     if (tx && a > Number(tx.amountPaid || 0)) {
-      return toast.error("مبلغ تخصیص نامعتبر است");
+      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص نامعتبر است"));
     }
 
     try {
@@ -228,7 +229,7 @@ export default function TransactionAllocationsPage() {
       await loadAllocations();
       await loadCandidates();
     } catch {
-      toast.error("خطا در ویرایش");
+      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     }
   }
 
@@ -241,7 +242,7 @@ export default function TransactionAllocationsPage() {
       await loadAllocations();
       await loadCandidates();
     } catch {
-      toast.error("حذف ممکن نیست");
+      toast.error(getApiErrorMessage(e, "حذف ممکن نیست"));
     }
   }
 

@@ -7,6 +7,7 @@ import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { createItem } from "../../api/itemsApi";
 import { getItemCategories } from "../../api/itemCategoriesApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function QuickAddItemModal({
   open,
@@ -59,15 +60,15 @@ export default function QuickAddItemModal({
     };
 
     if (!payload.categoryId) {
-      toast.error("دسته‌بندی را انتخاب کنید");
+      toast.error(getApiErrorMessage(e, "دسته‌بندی را انتخاب کنید"));
       return;
     }
     if (!payload.code) {
-      toast.error("کد را وارد کنید");
+      toast.error(getApiErrorMessage(e, "کد را وارد کنید"));
       return;
     }
     if (!payload.title) {
-      toast.error("عنوان را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان را وارد کنید"));
       return;
     }
 
@@ -77,7 +78,7 @@ export default function QuickAddItemModal({
       onCreated?.(created);
       onClose?.();
     } catch (e) {
-      toast.error("خطا در ثبت");
+      toast.error(getApiErrorMessage(e, "خطا در ثبت"));
     }
   }
 

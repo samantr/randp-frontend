@@ -4,6 +4,7 @@ import Button from "../common/Button";
 import Input from "../common/Input";
 import toast from "react-hot-toast";
 import { updatePerson } from "../../api/personsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function EditPersonModal({ open, person, loading, onClose, onUpdated }) {
   const [isLegal, setIsLegal] = useState(false);
@@ -66,7 +67,7 @@ export default function EditPersonModal({ open, person, loading, onClose, onUpda
 
   async function handleSave() {
     if (!person?.id) {
-      toast.error("اطلاعات شخص هنوز بارگذاری نشده است");
+      toast.error(getApiErrorMessage(e, "اطلاعات شخص هنوز بارگذاری نشده است"));
       return;
     }
 
@@ -82,12 +83,12 @@ export default function EditPersonModal({ open, person, loading, onClose, onUpda
 
     if (payload.isLegal) {
       if (!payload.companyName) {
-        toast.error("نام سازمان را وارد کنید");
+        toast.error(getApiErrorMessage(e, "نام سازمان را وارد کنید"));
         return;
       }
     } else {
       if (!payload.name && !payload.lastName) {
-        toast.error("نام یا نام خانوادگی را وارد کنید");
+        toast.error(getApiErrorMessage(e, "نام یا نام خانوادگی را وارد کنید"));
         return;
       }
     }
@@ -98,7 +99,7 @@ export default function EditPersonModal({ open, person, loading, onClose, onUpda
       onUpdated?.();
       onClose?.();
     } catch (e) {
-      toast.error("خطا در ویرایش");
+      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     }
   }
 

@@ -21,6 +21,7 @@ import { getUnits } from "../../api/unitsApi";
 
 import QuickAddPersonModal from "../persons/QuickAddPersonModal";
 import { normalizeFaText } from "../../utils/normalizeFa";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 /** yyyy-mm-dd */
 function nowLocalISOForInput() {
@@ -192,8 +193,8 @@ export default function DebtsMasterDetailPage() {
       if (!selectedDebtId || !ids.has(selectedDebtId)) {
         setSelectedDebtId(rows[0]?.debt_id ?? null);
       }
-    } catch {
-      toast.error("خطا در دریافت لیست بدهی‌ها");
+    } catch(e) {
+      toast.error(getApiErrorMessage(e,"خطا در دریافت لیست بدهی‌ها"));
     } finally {
       setLoadingHeaders(false);
     }
@@ -219,8 +220,8 @@ export default function DebtsMasterDetailPage() {
       try {
         const v = await getDebtView(debtId);
         setDetailView(v);
-      } catch {
-        toast.error("خطا در دریافت جزئیات بدهی");
+      } catch(e) {
+        toast.error(getApiErrorMessage(e,"خطا در دریافت جزئیات بدهی"));
         setDetailView(null);
       } finally {
         setLoadingDetail(false);
@@ -386,8 +387,8 @@ export default function DebtsMasterDetailPage() {
           dsc: l.dsc || "",
         }))
       );
-    } catch {
-      toast.error("خطا در دریافت بدهی برای ویرایش");
+    } catch(e) {
+      toast.error(getApiErrorMessage(e,"خطا در دریافت بدهی برای ویرایش"));
       setMode("view");
     } finally {
       setLoadingDetail(false);
@@ -482,8 +483,8 @@ export default function DebtsMasterDetailPage() {
       toast.success("حذف شد");
       setDeleteId(null);
       await loadHeaders();
-    } catch {
-      toast.error("حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)");
+    } catch(e) {
+      toast.error(getApiErrorMessage(e,"حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)"));
     }
   }
 

@@ -102,7 +102,7 @@ export default function DebtAllocationsPage() {
       const v = await getDebtView(debtId);
       setDebtView(v);
     } catch {
-      toast.error("خطا در دریافت اطلاعات بدهی");
+      toast.error(getApiErrorMessage(e,"خطا در دریافت اطلاعات بدهی"));
       setDebtView(null);
     } finally {
       setLoadingHeader(false);
@@ -116,7 +116,7 @@ export default function DebtAllocationsPage() {
       const data = await listAllocations(debtId);
       setRows(Array.isArray(data) ? data : []);
     } catch {
-      toast.error("خطا در دریافت تخصیص‌ها");
+      toast.error(getApiErrorMessage(e,"خطا در دریافت تخصیص‌ها"));
       setRows([]);
     } finally {
       setLoading(false);
@@ -147,14 +147,14 @@ export default function DebtAllocationsPage() {
     const txId = Number(transactionId);
     const a = Number(amount);
 
-    if (!Number.isFinite(txId) || txId <= 0) return toast.error("تراکنش را انتخاب کنید");
-    if (!Number.isFinite(a) || a <= 0) return toast.error("مبلغ نامعتبر است");
+    if (!Number.isFinite(txId) || txId <= 0) return toast.error(getApiErrorMessage(e,"تراکنش را انتخاب کنید"));
+    if (!Number.isFinite(a) || a <= 0) return toast.error(getApiErrorMessage(e,"مبلغ نامعتبر است"));
 
-    if (a > remainingDebt) return toast.error("مبلغ تخصیص نمی‌تواند بیشتر از مانده بدهی باشد");
+    if (a > remainingDebt) return toast.error(getApiErrorMessage(e,"مبلغ تخصیص نمی‌تواند بیشتر از مانده بدهی باشد"));
 
     const tx = txMap[txId];
     if (tx && a > Number(tx.remainingAmount || 0)) {
-      return toast.error("مبلغ تخصیص نمی‌تواند بیشتر از مانده تراکنش باشد");
+      return toast.error(getApiErrorMessage(e,"مبلغ تخصیص نمی‌تواند بیشتر از مانده تراکنش باشد"));
     }
 
     try {
@@ -171,7 +171,7 @@ export default function DebtAllocationsPage() {
       await loadAllocations();
       await loadCandidates();
     } catch {
-      toast.error("خطا در ثبت تخصیص");
+      toast.error(getApiErrorMessage(e,"خطا در ثبت تخصیص"));
     }
   }
 
@@ -198,12 +198,12 @@ export default function DebtAllocationsPage() {
     const txId = Number(editTransactionId);
     const a = Number(editAmount);
 
-    if (!Number.isFinite(txId) || txId <= 0) return toast.error("تراکنش را انتخاب کنید");
-    if (!Number.isFinite(a) || a <= 0) return toast.error("مبلغ نامعتبر است");
+    if (!Number.isFinite(txId) || txId <= 0) return toast.error(getApiErrorMessage(e,"تراکنش را انتخاب کنید"));
+    if (!Number.isFinite(a) || a <= 0) return toast.error(getApiErrorMessage(e,"مبلغ نامعتبر است"));
 
     const tx = editTxMap[txId];
     if (tx && a > Number(tx.editableRemainingAmount || 0)) {
-      return toast.error("مبلغ تخصیص بیشتر از مانده قابل ویرایش تراکنش است");
+      return toast.error(getApiErrorMessage(e,"مبلغ تخصیص بیشتر از مانده قابل ویرایش تراکنش است"));
     }
 
     try {
@@ -219,7 +219,7 @@ export default function DebtAllocationsPage() {
       await loadAllocations();
       await loadCandidates();
     } catch {
-      toast.error("خطا در ویرایش");
+      toast.error(getApiErrorMessage(e,"خطا در ویرایش"));
     }
   }
 
@@ -232,7 +232,7 @@ export default function DebtAllocationsPage() {
       await loadAllocations();
       await loadCandidates();
     } catch {
-      toast.error("حذف ممکن نیست");
+      toast.error(getApiErrorMessage(e,"حذف ممکن نیست"));
     }
   }
 

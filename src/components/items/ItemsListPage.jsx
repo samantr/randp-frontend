@@ -15,6 +15,7 @@ import { getItemCategories } from "../../api/itemCategoriesApi";
 import QuickAddItemModal from "./QuickAddItemModal";
 import EditItemModal from "./EditItemModal";
 import QuickAddItemCategoryModal from "../itemCategories/QuickAddItemCategoryModal";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 function paginate(arr, page, size) {
   const total = arr.length;
@@ -66,7 +67,7 @@ export default function ItemsListPage() {
 
       setAll(res || []);
     } catch (e) {
-      toast.error("خطا در دریافت لیست");
+      toast.error(getApiErrorMessage(e, "خطا در دریافت لیست"));
     } finally {
       setLoading(false);
     }
@@ -124,7 +125,7 @@ export default function ItemsListPage() {
                   const fresh = await getItemById(r.id);
                   setEditingItem(fresh);
                 } catch {
-                  toast.error("خطا در دریافت اطلاعات");
+                  toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات"));
                   setEditOpen(false);
                 } finally {
                   setEditLoading(false);
@@ -156,7 +157,7 @@ export default function ItemsListPage() {
 
       await load();
     } catch {
-      toast.error("خطا در حذف");
+      toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }
 

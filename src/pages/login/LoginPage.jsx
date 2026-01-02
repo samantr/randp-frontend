@@ -3,6 +3,7 @@ import Input from "../../components/common/Input";
 import Button from "../../components/common/Button";
 import toast from "react-hot-toast";
 import { login } from "../../api/authApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage"; // اضافه کن
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -18,7 +19,7 @@ export default function LoginPage() {
       toast.success("ورود موفق");
       window.location.href = "/";
     } catch {
-      toast.error("نام کاربری یا رمز عبور اشتباه است");
+      toast.error(getApiErrorMessage(e, "نام کاربری یا رمز عبور اشتباه است"));
     } finally {
       setLoading(false);
     }

@@ -4,6 +4,7 @@ import Button from "../common/Button";
 import Input from "../common/Input";
 import toast from "react-hot-toast";
 import { createUnit } from "../../api/unitsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function QuickAddUnitModal({ open, onClose, onCreated }) {
   const [title, setTitle] = useState("");
@@ -22,7 +23,7 @@ export default function QuickAddUnitModal({ open, onClose, onCreated }) {
     };
 
     if (!payload.title) {
-      toast.error("عنوان واحد را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان واحد را وارد کنید"));
       return;
     }
 
@@ -32,7 +33,7 @@ export default function QuickAddUnitModal({ open, onClose, onCreated }) {
       onCreated?.(created);
       onClose?.();
     } catch (e) {
-      toast.error("خطا در ثبت واحد");
+      toast.error(getApiErrorMessage(e, "خطا در ثبت واحد"));
     }
   }
 

@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { createItemCategory, getItemCategories } from "../../api/itemCategoriesApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function QuickAddItemCategoryModal({
   open,
@@ -51,7 +52,7 @@ export default function QuickAddItemCategoryModal({
     };
 
     if (!payload.title) {
-      toast.error("عنوان را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان را وارد کنید"));
       return;
     }
 
@@ -61,7 +62,7 @@ export default function QuickAddItemCategoryModal({
       onCreated?.(created);
       onClose?.();
     } catch (e) {
-      toast.error("خطا در ثبت دسته‌بندی");
+      toast.error(getApiErrorMessage(e, "خطا در ثبت دسته‌بندی"));
     }
   }
 

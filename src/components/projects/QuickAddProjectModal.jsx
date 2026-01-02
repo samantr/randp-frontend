@@ -53,7 +53,7 @@ export default function QuickAddProjectModal({ open, onClose, onCreated }) {
     };
 
     if (!payload.title) {
-      toast.error("عنوان پروژه را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان پروژه را وارد کنید"));
       return;
     }
 
@@ -63,7 +63,7 @@ export default function QuickAddProjectModal({ open, onClose, onCreated }) {
       onCreated?.(created);
       onClose?.();
     } catch {
-      toast.error("خطا در ثبت پروژه");
+      toast.error(getApiErrorMessage(e, "خطا در ثبت پروژه"));
     }
   }
 

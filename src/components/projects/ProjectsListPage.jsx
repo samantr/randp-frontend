@@ -7,6 +7,7 @@ import { normalizeFaText } from "../../utils/normalizeFa";
 import { deleteProject, getProjectById, getProjects } from "../../api/projectsApi";
 import QuickAddProjectModal from "./QuickAddProjectModal";
 import EditProjectModal from "./EditProjectModal";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 function buildTree(all) {
   const byId = new Map();
@@ -93,7 +94,7 @@ export default function ProjectsListPage() {
         return collectAllIds(res || []);
       });
     } catch {
-      toast.error("خطا در دریافت لیست پروژه‌ها");
+      toast.error(getApiErrorMessage(e, "خطا در دریافت لیست پروژه‌ها"));
     } finally {
       setLoading(false);
     }
@@ -139,7 +140,7 @@ export default function ProjectsListPage() {
       setDeleteId(null);
       await load();
     } catch {
-      toast.error("خطا در حذف پروژه");
+      toast.error(getApiErrorMessage(e, "خطا در حذف پروژه"));
     }
   }
 
@@ -235,7 +236,7 @@ export default function ProjectsListPage() {
                                 const fresh = await getProjectById(r.id);
                                 setEditingProject(fresh);
                               } catch {
-                                toast.error("خطا در دریافت اطلاعات");
+                                toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات"));
                                 setEditOpen(false);
                               } finally {
                                 setEditLoading(false);

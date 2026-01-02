@@ -6,6 +6,7 @@ import DataTable from "../table/DataTable";
 import Pagination from "../table/Pagination";
 import ConfirmDialog from "../common/ConfirmDialog";
 import toast from "react-hot-toast";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 import {
   deleteTransaction,
@@ -101,7 +102,7 @@ export default function TransactionsListPage() {
         const res = await getTransactions({ q: nextQ, page: nextPage, size });
         setData(normalizePageLike(res));
       } catch {
-        toast.error("خطا در دریافت لیست تراکنش‌ها");
+        toast.error(getApiErrorMessage(e, "خطا در دریافت لیست تراکنش‌ها"));
         setData({ content: [], totalPages: 0 });
       } finally {
         setLoading(false);
@@ -247,7 +248,7 @@ export default function TransactionsListPage() {
                   const fresh = await getTransactionById(r.id);
                   setEditing(fresh);
                 } catch {
-                  toast.error("خطا در دریافت اطلاعات تراکنش");
+                  toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات تراکنش"));
                   setEditOpen(false);
                 } finally {
                   setEditLoading(false);
@@ -279,7 +280,7 @@ export default function TransactionsListPage() {
       if (nextPage !== page) setPage(nextPage);
       await load({ nextPage });
     } catch {
-      toast.error("خطا در حذف");
+      toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }
 

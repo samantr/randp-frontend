@@ -11,6 +11,7 @@ import { getProjects } from "../../api/projectsApi";
 
 // اگر مسیر فایل شما فرق دارد، این import را اصلاح کنید
 import QuickAddPersonModal from "../persons/QuickAddPersonModal";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 function normalizePageLike(data) {
   if (Array.isArray(data)) return { content: data, totalPages: 1 };
@@ -135,7 +136,7 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
   async function handleSubmit(e) {
     e?.preventDefault?.();
     if (Object.keys(errors).length > 0) {
-      toast.error("اطلاعات را کامل کنید");
+      toast.error(getApiErrorMessage(e, "اطلاعات را کامل کنید"));
       return;
     }
 
@@ -159,7 +160,7 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
       onClose?.();
       await onCreated?.();
     } catch {
-      toast.error("خطا در ثبت تراکنش");
+      toast.error(getApiErrorMessage(e, "خطا در ثبت تراکنش"));
     } finally {
       setSaving(false);
     }

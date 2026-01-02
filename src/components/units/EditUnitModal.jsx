@@ -4,6 +4,7 @@ import Button from "../common/Button";
 import Input from "../common/Input";
 import toast from "react-hot-toast";
 import { updateUnit } from "../../api/unitsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function EditUnitModal({ open, unit, loading, onClose, onUpdated }) {
   const [title, setTitle] = useState("");
@@ -23,7 +24,7 @@ export default function EditUnitModal({ open, unit, loading, onClose, onUpdated 
 
   async function handleSave() {
     if (!unit?.id) {
-      toast.error("اطلاعات واحد هنوز بارگذاری نشده است");
+      toast.error(getApiErrorMessage(e, "اطلاعات واحد هنوز بارگذاری نشده است"));
       return;
     }
 
@@ -33,7 +34,7 @@ export default function EditUnitModal({ open, unit, loading, onClose, onUpdated 
     };
 
     if (!payload.title) {
-      toast.error("عنوان واحد را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان واحد را وارد کنید"));
       return;
     }
 
@@ -43,7 +44,7 @@ export default function EditUnitModal({ open, unit, loading, onClose, onUpdated 
       onUpdated?.();
       onClose?.();
     } catch {
-      toast.error("خطا در ویرایش");
+      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     }
   }
 

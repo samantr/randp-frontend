@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { getProjects, updateProject } from "../../api/projectsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function EditProjectModal({
   open,
@@ -67,12 +68,12 @@ export default function EditProjectModal({
     };
 
     if (!payload.title) {
-      toast.error("عنوان پروژه را وارد کنید");
+      toast.error(getApiErrorMessage(e, "عنوان پروژه را وارد کنید"));
       return;
     }
 
     if (payload.parentId && payload.parentId === project.id) {
-      toast.error("پروژه پدر نمی‌تواند خود پروژه باشد");
+      toast.error(getApiErrorMessage(e, "پروژه پدر نمی‌تواند خود پروژه باشد"));
       return;
     }
 
@@ -82,7 +83,7 @@ export default function EditProjectModal({
       onUpdated?.(updated);
       onClose?.();
     } catch {
-      toast.error("خطا در ویرایش پروژه");
+      toast.error(getApiErrorMessage(e, "خطا در ویرایش پروژه"));
     }
   }
 

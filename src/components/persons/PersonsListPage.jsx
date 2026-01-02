@@ -14,6 +14,7 @@ import {
 } from "../../api/personsApi";
 import QuickAddPersonModal from "../../components/persons/QuickAddPersonModal";
 import EditPersonModal from "../../components/persons/EditPersonModal";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 function personTypeLabel(isLegal) {
   return isLegal ? "حقوقی" : "حقیقی";
@@ -53,7 +54,7 @@ export default function PersonsListPage() {
 
         setData(res);
       } catch (e) {
-        toast.error("خطا در دریافت لیست");
+        toast.error(getApiErrorMessage(e, "خطا در دریافت لیست"));
       } finally {
         setLoading(false);
       }
@@ -114,7 +115,7 @@ export default function PersonsListPage() {
                   const fresh = await getPersonById(r.id); // IMPORTANT
                   setEditingPerson(fresh);
                 } catch (e) {
-                  toast.error("خطا در دریافت اطلاعات شخص");
+                  toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات شخص"));
                   setEditOpen(false);
                 } finally {
                   setEditLoading(false);
@@ -146,7 +147,7 @@ export default function PersonsListPage() {
 
       await load({ nextPage });
     } catch {
-      toast.error("خطا در حذف");
+      toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }
 
