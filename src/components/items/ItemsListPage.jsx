@@ -156,7 +156,7 @@ export default function ItemsListPage() {
       if (nextPage !== page) setPage(nextPage);
 
       await load();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }

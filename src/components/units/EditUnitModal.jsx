@@ -43,7 +43,7 @@ export default function EditUnitModal({ open, unit, loading, onClose, onUpdated 
       toast.success("ویرایش شد");
       onUpdated?.();
       onClose?.();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     }
   }

@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import Button from "../common/Button";
-import FiltersBar from "../table/FiltersBar";
 import DataTable from "../table/DataTable";
 import Pagination from "../table/Pagination";
 import ConfirmDialog from "../common/ConfirmDialog";
@@ -50,10 +49,52 @@ function moneyFa(v) {
   return Number(v || 0).toLocaleString("fa-IR");
 }
 
+function normalizeText(v) {
+  return String(v ?? "").trim().toLowerCase();
+}
+
+function toDateSortable(v) {
+  const t = Date.parse(v || "");
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** ✅ IMPORTANT: move these OUTSIDE so input won't lose focus */
+const HeaderFilterInput = React.memo(function HeaderFilterInput({
+  value,
+  onChange,
+  placeholder = "فیلتر...",
+}) {
+  return (
+    <input
+      className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs"
+      placeholder={placeholder}
+      value={value || ""}
+      onChange={onChange}
+    />
+  );
+});
+
+const SortableHeader = React.memo(function SortableHeader({
+  title,
+  icon,
+  onClick,
+}) {
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-2 font-semibold"
+      onClick={onClick}
+      title="مرتب‌سازی"
+    >
+      <span>{title}</span>
+      <span className="text-xs text-zinc-500">{icon}</span>
+    </button>
+  );
+});
+
 export default function TransactionsListPage() {
   const navigate = useNavigate();
 
-  const [q, setQ] = useState("");
   const [page, setPage] = useState(0);
   const [size] = useState(20);
 
@@ -68,7 +109,27 @@ export default function TransactionsListPage() {
   const [editing, setEditing] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
 
-  // lookup caches: id -> label
+  // per-column filters
+  const [cf, setCf] = useState({
+    id: "",
+    code: "",
+    project: "",
+    from: "",
+    to: "",
+    dateDue: "",
+    amountPaid: "",
+    allocatedAmount: "",
+    remainingAmount: "",
+    paymentType: "",
+    transactionType: "",
+    dateRegistered: "",
+    dsc: "",
+  });
+
+  // sorting
+  const [sort, setSort] = useState({ key: null, dir: null });
+
+  // lookup caches
   const [personsMap, setPersonsMap] = useState({});
   const [projectsMap, setProjectsMap] = useState({});
 
@@ -96,19 +157,19 @@ export default function TransactionsListPage() {
   }, [loadLookups]);
 
   const load = useCallback(
-    async ({ nextQ = q, nextPage = page } = {}) => {
+    async ({ nextPage = page } = {}) => {
       setLoading(true);
       try {
-        const res = await getTransactions({ q: nextQ, page: nextPage, size });
+        const res = await getTransactions({ q: "", page: nextPage, size });
         setData(normalizePageLike(res));
-      } catch {
+      } catch (e) {
         toast.error(getApiErrorMessage(e, "خطا در دریافت لیست تراکنش‌ها"));
         setData({ content: [], totalPages: 0 });
       } finally {
         setLoading(false);
       }
     },
-    [q, page, size]
+    [page, size]
   );
 
   useEffect(() => {
@@ -116,78 +177,158 @@ export default function TransactionsListPage() {
     const t = setTimeout(async () => {
       if (!alive) return;
       await load();
-    }, 250);
+    }, 150);
 
     return () => {
       alive = false;
       clearTimeout(t);
     };
-  }, [q, page, load]);
+  }, [page, load]);
+
+  const rowValue = useCallback(
+    (r, key) => {
+      if (!r) return "";
+
+      if (key === "id") return r.id ?? "";
+      if (key === "code") return r.code ?? "";
+
+      if (key === "project") {
+        const id = r.projectId || r.project?.id;
+        return id ? projectsMap[id] || `#${id}` : "-";
+      }
+
+      if (key === "from") {
+        const id = r.fromPersonId || r.fromPerson?.id;
+        return id ? personsMap[id] || `#${id}` : "-";
+      }
+
+      if (key === "to") {
+        const id = r.toPersonId || r.toPerson?.id;
+        return id ? personsMap[id] || `#${id}` : "-";
+      }
+
+      if (key === "dateDue") return r.dateDue || "-";
+
+      if (key === "amountPaid") return r.amountPaid ?? "";
+      if (key === "allocatedAmount") return r.allocatedAmount ?? "";
+      if (key === "remainingAmount") return r.remainingAmount ?? "";
+
+      if (key === "paymentType") return paymentTypeLabel(r.paymentType);
+      if (key === "transactionType")
+        return transactionTypeLabel(r.transactionType);
+
+      if (key === "dateRegistered") {
+        return r.dateRegistered
+          ? r.dateRegistered.replace("T", " ").substring(0, 16)
+          : "-";
+      }
+
+      if (key === "dsc") return r.dsc || "-";
+
+      return "";
+    },
+    [personsMap, projectsMap]
+  );
+
+  const filteredSortedRows = useMemo(() => {
+    const rows = data.content || [];
+
+    const filtered = rows.filter((r) => {
+      for (const k of Object.keys(cf)) {
+        const needle = normalizeText(cf[k]);
+        if (!needle) continue;
+
+        const val = rowValue(r, k);
+
+        if (
+          k === "amountPaid" ||
+          k === "allocatedAmount" ||
+          k === "remainingAmount" ||
+          k === "id"
+        ) {
+          const v = normalizeText(String(val ?? ""));
+          if (!v.includes(needle)) return false;
+          continue;
+        }
+
+        const hay = normalizeText(val);
+        if (!hay.includes(needle)) return false;
+      }
+      return true;
+    });
+
+    if (!sort.key || !sort.dir) return filtered;
+
+    const dirMul = sort.dir === "asc" ? 1 : -1;
+    const key = sort.key;
+
+    return [...filtered].sort((a, b) => {
+      if (key === "id") return dirMul * (Number(a.id || 0) - Number(b.id || 0));
+      if (key === "amountPaid")
+        return dirMul * (Number(a.amountPaid || 0) - Number(b.amountPaid || 0));
+      if (key === "allocatedAmount")
+        return (
+          dirMul *
+          (Number(a.allocatedAmount || 0) - Number(b.allocatedAmount || 0))
+        );
+      if (key === "remainingAmount")
+        return (
+          dirMul *
+          (Number(a.remainingAmount || 0) - Number(b.remainingAmount || 0))
+        );
+
+      if (key === "dateDue")
+        return dirMul * (toDateSortable(a.dateDue) - toDateSortable(b.dateDue));
+      if (key === "dateRegistered")
+        return (
+          dirMul *
+          (toDateSortable(a.dateRegistered) - toDateSortable(b.dateRegistered))
+        );
+
+      const va = normalizeText(rowValue(a, key));
+      const vb = normalizeText(rowValue(b, key));
+      if (va < vb) return -1 * dirMul;
+      if (va > vb) return 1 * dirMul;
+      return 0;
+    });
+  }, [data.content, cf, sort, rowValue]);
+
+  function toggleSort(key) {
+    setSort((prev) => {
+      if (prev.key !== key) return { key, dir: "asc" };
+      if (prev.dir === "asc") return { key, dir: "desc" };
+      return { key: null, dir: null };
+    });
+  }
+
+  function sortIcon(key) {
+    if (sort.key !== key || !sort.dir) return "⇅";
+    return sort.dir === "asc" ? "↑" : "↓";
+  }
 
   const columns = useMemo(
     () => [
-      { key: "id", title: "ID", render: (r) => r.id },
-
-      {
-        key: "code",
-        title: "کد",
-        render: (r) => <span className="font-semibold">{r.code || "-"}</span>,
-      },
-
-      {
-        key: "project",
-        title: "پروژه",
-        render: (r) => {
-          const id = r.projectId || r.project?.id;
-          if (!id) return "-";
-          return projectsMap[id] || `#${id}`;
-        },
-      },
-
-      {
-        key: "from",
-        title: "از",
-        render: (r) => {
-          const id = r.fromPersonId || r.fromPerson?.id;
-          if (!id) return "-";
-          return personsMap[id] || `#${id}`;
-        },
-      },
-
-      {
-        key: "to",
-        title: "به",
-        render: (r) => {
-          const id = r.toPersonId || r.toPerson?.id;
-          if (!id) return "-";
-          return personsMap[id] || `#${id}`;
-        },
-      },
-
-      { key: "dateDue", title: "سررسید", render: (r) => r.dateDue || "-" },
-
+      // { key: "id", title: "ID", render: (r) => r.id },
+      { key: "code", title: "کد", render: (r) => <b>{r.code || "-"}</b> },
+      { key: "project", title: "پروژه", render: (r) => rowValue(r, "project") },
+      { key: "from", title: "از", render: (r) => rowValue(r, "from") },
+      { key: "to", title: "به", render: (r) => rowValue(r, "to") },
+      { key: "dateDue", title: "سررسید", render: (r) => rowValue(r, "dateDue") },
       {
         key: "amountPaid",
         title: "مبلغ",
         render: (r) => (r.amountPaid != null ? moneyFa(r.amountPaid) : "-"),
       },
-
-      // ✅ NEW
       {
         key: "allocatedAmount",
         title: "تخصیص",
-        render: (r) =>
-          r.allocatedAmount != null ? moneyFa(r.allocatedAmount) : "-",
+        render: (r) => (r.allocatedAmount != null ? moneyFa(r.allocatedAmount) : "-"),
       },
-
-      // ✅ NEW
       {
         key: "remainingAmount",
         title: "مانده",
-        render: (r) =>
-          r.remainingAmount != null ? moneyFa(r.remainingAmount) : "-",
+        render: (r) => (r.remainingAmount != null ? moneyFa(r.remainingAmount) : "-"),
       },
-
       {
         key: "paymentType",
         title: "نوع پرداخت",
@@ -197,7 +338,6 @@ export default function TransactionsListPage() {
           </span>
         ),
       },
-
       {
         key: "transactionType",
         title: "نوع تراکنش",
@@ -207,36 +347,19 @@ export default function TransactionsListPage() {
           </span>
         ),
       },
-
-      {
-        key: "dateRegistered",
-        title: "ثبت",
-        render: (r) =>
-          r.dateRegistered
-            ? r.dateRegistered.replace("T", " ").substring(0, 16)
-            : "-",
-      },
-
+      //{ key: "dateRegistered", title: "ثبت", render: (r) => rowValue(r, "dateRegistered") },
       { key: "dsc", title: "توضیحات", render: (r) => r.dsc || "-" },
-
       {
         key: "actions",
         title: "عملیات",
         render: (r) => (
           <div className="flex gap-2">
-            <Button
-              variant="secondary"
-              onClick={() => navigate(`/transactions/${r.id}/allocations`)}
-            >
+            <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/allocations`)}>
               تخصیص‌ها
             </Button>
-            <Button
-              variant="secondary"
-              onClick={() => navigate(`/transactions/${r.id}/documents`)}
-            >
+            <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/documents`)}>
               پیوست‌ها
             </Button>
-
             <Button
               variant="secondary"
               onClick={async () => {
@@ -244,10 +367,9 @@ export default function TransactionsListPage() {
                   setEditLoading(true);
                   setEditing(null);
                   setEditOpen(true);
-
                   const fresh = await getTransactionById(r.id);
                   setEditing(fresh);
-                } catch {
+                } catch (e) {
                   toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات تراکنش"));
                   setEditOpen(false);
                 } finally {
@@ -257,7 +379,6 @@ export default function TransactionsListPage() {
             >
               ویرایش
             </Button>
-
             <Button variant="danger" onClick={() => setDeleteId(r.id)}>
               حذف
             </Button>
@@ -265,7 +386,7 @@ export default function TransactionsListPage() {
         ),
       },
     ],
-    [personsMap, projectsMap, navigate]
+    [navigate, rowValue]
   );
 
   async function handleDelete() {
@@ -279,7 +400,7 @@ export default function TransactionsListPage() {
 
       if (nextPage !== page) setPage(nextPage);
       await load({ nextPage });
-    } catch {
+    } catch (e) {
       toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }
@@ -291,40 +412,137 @@ export default function TransactionsListPage() {
         <Button onClick={() => setQuickAddOpen(true)}>+ جدید</Button>
       </div>
 
-      <div className="mb-3">
-        <FiltersBar
-          q={q}
-          setQ={(v) => {
-            setPage(0);
-            setQ(v);
-          }}
-          onClear={() => {
-            setPage(0);
-            setQ("");
-          }}
-        />
+      <div className="mb-3 rounded-2xl border bg-white p-3 overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="text-zinc-600">
+            <tr className="border-b">
+              {/* <th className="py-2 text-right">
+                <SortableHeader title="ID" icon={sortIcon("id")} onClick={() => toggleSort("id")} />
+              </th> */}
+              <th className="py-2 text-right">
+                <SortableHeader title="کد" icon={sortIcon("code")} onClick={() => toggleSort("code")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="پروژه" icon={sortIcon("project")} onClick={() => toggleSort("project")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="از" icon={sortIcon("from")} onClick={() => toggleSort("from")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="به" icon={sortIcon("to")} onClick={() => toggleSort("to")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="سررسید" icon={sortIcon("dateDue")} onClick={() => toggleSort("dateDue")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="مبلغ" icon={sortIcon("amountPaid")} onClick={() => toggleSort("amountPaid")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="تخصیص" icon={sortIcon("allocatedAmount")} onClick={() => toggleSort("allocatedAmount")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="مانده" icon={sortIcon("remainingAmount")} onClick={() => toggleSort("remainingAmount")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="نوع پرداخت" icon={sortIcon("paymentType")} onClick={() => toggleSort("paymentType")} />
+              </th>
+              <th className="py-2 text-right">
+                <SortableHeader title="نوع تراکنش" icon={sortIcon("transactionType")} onClick={() => toggleSort("transactionType")} />
+              </th>
+              {/* <th className="py-2 text-right">
+                <SortableHeader title="ثبت" icon={sortIcon("dateRegistered")} onClick={() => toggleSort("dateRegistered")} />
+              </th> */}
+              <th className="py-2 text-right">
+                <SortableHeader title="توضیحات" icon={sortIcon("dsc")} onClick={() => toggleSort("dsc")} />
+              </th>
+              <th className="py-2 text-right">عملیات</th>
+            </tr>
+
+            <tr className="border-b bg-zinc-50">
+              {/* <th className="py-2">
+                <HeaderFilterInput value={cf.id} onChange={(e) => setCf((p) => ({ ...p, id: e.target.value }))} />
+              </th> */}
+              <th className="py-2">
+                <HeaderFilterInput value={cf.code} onChange={(e) => setCf((p) => ({ ...p, code: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.project} onChange={(e) => setCf((p) => ({ ...p, project: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.from} onChange={(e) => setCf((p) => ({ ...p, from: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.to} onChange={(e) => setCf((p) => ({ ...p, to: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.dateDue} onChange={(e) => setCf((p) => ({ ...p, dateDue: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.amountPaid} onChange={(e) => setCf((p) => ({ ...p, amountPaid: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.allocatedAmount} onChange={(e) => setCf((p) => ({ ...p, allocatedAmount: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.remainingAmount} onChange={(e) => setCf((p) => ({ ...p, remainingAmount: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.paymentType} onChange={(e) => setCf((p) => ({ ...p, paymentType: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <HeaderFilterInput value={cf.transactionType} onChange={(e) => setCf((p) => ({ ...p, transactionType: e.target.value }))} />
+              </th>
+              {/* <th className="py-2">
+                <HeaderFilterInput value={cf.dateRegistered} onChange={(e) => setCf((p) => ({ ...p, dateRegistered: e.target.value }))} />
+              </th> */}
+              <th className="py-2">
+                <HeaderFilterInput value={cf.dsc} onChange={(e) => setCf((p) => ({ ...p, dsc: e.target.value }))} />
+              </th>
+              <th className="py-2">
+                <button
+                  type="button"
+                  className="rounded-lg border border-zinc-200 px-2 py-1 text-xs hover:bg-white"
+                  onClick={() => {
+                    setCf({
+                      id: "",
+                      code: "",
+                      project: "",
+                      from: "",
+                      to: "",
+                      dateDue: "",
+                      amountPaid: "",
+                      allocatedAmount: "",
+                      remainingAmount: "",
+                      paymentType: "",
+                      transactionType: "",
+                      dateRegistered: "",
+                      dsc: "",
+                    });
+                    setSort({ key: null, dir: null });
+                  }}
+                >
+                  پاک‌کردن
+                </button>
+              </th>
+            </tr>
+          </thead>
+        </table>
+
+        <div className="mt-3">
+          <DataTable columns={columns} rows={filteredSortedRows} loading={loading} />
+        </div>
       </div>
 
-      <div className="mb-3">
-        <DataTable
-          columns={columns}
-          rows={data.content || []}
-          loading={loading}
-        />
-      </div>
-
-      <Pagination
-        page={page}
-        totalPages={data.totalPages || 0}
-        onPage={setPage}
-      />
+      <Pagination page={page} totalPages={data.totalPages || 0} onPage={setPage} />
 
       <ConfirmDialog
         open={deleteId !== null}
         title="حذف تراکنش"
         message="آیا از حذف این مورد مطمئن هستید؟"
         onCancel={() => setDeleteId(null)}
-        onConfirm={handleDelete}
+        onConfirm={async () => {
+          await handleDelete();
+        }}
       />
 
       <QuickAddTransactionModal
@@ -332,9 +550,8 @@ export default function TransactionsListPage() {
         onClose={() => setQuickAddOpen(false)}
         onCreated={async () => {
           await loadLookups();
-          setQ("");
           setPage(0);
-          await load({ nextQ: "", nextPage: 0 });
+          await load({ nextPage: 0 });
         }}
       />
 

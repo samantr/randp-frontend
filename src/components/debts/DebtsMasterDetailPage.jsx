@@ -32,6 +32,13 @@ function nowLocalISOForInput() {
   )}:${pad(d.getMinutes())}`;
 }
 
+/** yyyy-mm-dd */
+function nowLocalISODateForInput() {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
 function moneyFa(v) {
   return Number(v || 0).toLocaleString("fa-IR");
 }
@@ -111,11 +118,40 @@ export default function DebtsMasterDetailPage() {
     total: "",
     covered: "",
     remaining: "",
+    dsc: "", // ✅ NEW (description filter)
   });
 
   // caches for showing project/person columns
   const [projectsMap, setProjectsMap] = useState(new Map()); // id -> title
   const [personsMap, setPersonsMap] = useState(new Map()); // id -> display
+
+  // --------------------
+  // sorting (headers list)
+  // --------------------
+  const [sortBy, setSortBy] = useState(null); // project | person | dateDue | total | covered | remaining | dsc
+  const [sortDir, setSortDir] = useState("asc"); // asc | desc
+
+  function toggleSort(field) {
+    setSortBy((prev) => {
+      if (prev === field) {
+        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+        return prev;
+      }
+      setSortDir("asc");
+      return field;
+    });
+  }
+
+  function SortIcon({ active, dir }) {
+    if (!active) return <span className="text-zinc-300">⇅</span>;
+    return <span className="text-zinc-500">{dir === "asc" ? "↑" : "↓"}</span>;
+  }
+
+  // --------------------
+  // paging (headers list)
+  // --------------------
+  const PAGE_SIZE = 5;
+  const [pageIndex, setPageIndex] = useState(0); // 0-based
 
   // preload maps (projects + all persons pages)
   useEffect(() => {
@@ -193,8 +229,8 @@ export default function DebtsMasterDetailPage() {
       if (!selectedDebtId || !ids.has(selectedDebtId)) {
         setSelectedDebtId(rows[0]?.debt_id ?? null);
       }
-    } catch(e) {
-      toast.error(getApiErrorMessage(e,"خطا در دریافت لیست بدهی‌ها"));
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "خطا در دریافت لیست بدهی‌ها"));
     } finally {
       setLoadingHeaders(false);
     }
@@ -220,8 +256,8 @@ export default function DebtsMasterDetailPage() {
       try {
         const v = await getDebtView(debtId);
         setDetailView(v);
-      } catch(e) {
-        toast.error(getApiErrorMessage(e,"خطا در دریافت جزئیات بدهی"));
+      } catch (e) {
+        toast.error(getApiErrorMessage(e, "خطا در دریافت جزئیات بدهی"));
         setDetailView(null);
       } finally {
         setLoadingDetail(false);
@@ -248,6 +284,7 @@ export default function DebtsMasterDetailPage() {
       total: normalizeFaText(hf.total || ""),
       covered: normalizeFaText(hf.covered || ""),
       remaining: normalizeFaText(hf.remaining || ""),
+      dsc: normalizeFaText(hf.dsc || ""), // ✅ NEW
     };
 
     return (headers || []).filter((r) => {
@@ -257,6 +294,7 @@ export default function DebtsMasterDetailPage() {
       const total = normalizeFaText(String(r.total_amount ?? ""));
       const covered = normalizeFaText(String(r.covered_amount ?? ""));
       const remaining = normalizeFaText(String(r.remaining_amount ?? ""));
+      const dsc = normalizeFaText(String(r.dsc ?? "")); // ✅ NEW
 
       const projectId = getAny(r, ["project_id", "projectId", "projectID"]);
       const personId = getAny(r, ["person_id", "personId", "personID"]);
@@ -276,10 +314,111 @@ export default function DebtsMasterDetailPage() {
       if (f.total && !total.includes(f.total)) return false;
       if (f.covered && !covered.includes(f.covered)) return false;
       if (f.remaining && !remaining.includes(f.remaining)) return false;
+      if (f.dsc && !dsc.includes(f.dsc)) return false; // ✅ NEW
 
       return true;
     });
   }, [headers, hf, projectsMap, personsMap]);
+
+  // reset page ONLY when filters change
+  useEffect(() => {
+    setPageIndex(0);
+  }, [
+    hf.debtId,
+    hf.project,
+    hf.person,
+    hf.dateRegistered,
+    hf.dateDue,
+    hf.total,
+    hf.covered,
+    hf.remaining,
+    hf.dsc, // ✅ NEW
+  ]);
+
+  // --------------------
+  // sorting applied AFTER filtering, BEFORE paging
+  // --------------------
+  const sortedHeaders = useMemo(() => {
+    if (!sortBy) return filteredHeaders;
+
+    const dir = sortDir === "asc" ? 1 : -1;
+
+    return [...(filteredHeaders || [])].sort((a, b) => {
+      const getVal = (r) => {
+        switch (sortBy) {
+          case "project": {
+            const id = getAny(r, ["project_id", "projectId", "projectID"]);
+            return id ? projectsMap.get(id) || `#${id}` : "";
+          }
+          case "person": {
+            const id = getAny(r, ["person_id", "personId", "personID"]);
+            return id ? personsMap.get(id) || `#${id}` : "";
+          }
+          case "dateDue":
+            return r.date_due || "";
+          case "total":
+            return Number(r.total_amount || 0);
+          case "covered":
+            return Number(r.covered_amount || 0);
+          case "remaining":
+            return Number(r.remaining_amount || 0);
+          case "dsc":
+            return r.dsc || "";
+          default:
+            return "";
+        }
+      };
+
+      const va = getVal(a);
+      const vb = getVal(b);
+
+      if (typeof va === "number" && typeof vb === "number") {
+        return (va - vb) * dir;
+      }
+      return String(va).localeCompare(String(vb), "fa") * dir;
+    });
+  }, [filteredHeaders, sortBy, sortDir, projectsMap, personsMap]);
+
+  const totalPages = useMemo(() => {
+    const n = Math.ceil((filteredHeaders?.length || 0) / PAGE_SIZE);
+    return Math.max(1, n);
+  }, [filteredHeaders, PAGE_SIZE]);
+
+  const pagedHeaders = useMemo(() => {
+    const start = pageIndex * PAGE_SIZE;
+    return (sortedHeaders || []).slice(start, start + PAGE_SIZE);
+  }, [sortedHeaders, pageIndex, PAGE_SIZE]);
+
+  // keep pageIndex in range
+  useEffect(() => {
+    if (pageIndex > totalPages - 1) {
+      setPageIndex(Math.max(0, totalPages - 1));
+    }
+  }, [pageIndex, totalPages]);
+
+  // when page changes: keep selected if possible; if nothing found => just clear detail
+  useEffect(() => {
+    if (mode !== "view") return;
+
+    // if no rows found, do NOT touch selectedDebtId (to avoid ping-pong),
+    // just clear the shown detail
+    if (!pagedHeaders || pagedHeaders.length === 0) {
+      if (detailView !== null) setDetailView(null);
+      return;
+    }
+
+    const ids = new Set(pagedHeaders.map((r) => r.debt_id));
+    if (!selectedDebtId || !ids.has(selectedDebtId)) {
+      setSelectedDebtId(pagedHeaders[0]?.debt_id ?? null);
+    }
+  }, [pageIndex, pagedHeaders, selectedDebtId, mode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  function goPrevPage() {
+    setPageIndex((p) => Math.max(0, p - 1));
+  }
+  function goNextPage() {
+    setPageIndex((p) => Math.min(totalPages - 1, p + 1));
+  }
 
   // --------------------
   // editable lines helpers
@@ -331,7 +470,7 @@ export default function DebtsMasterDetailPage() {
     setHeaderProject(null);
     setHeaderPerson(null);
     setDateRegistered(nowLocalISOForInput());
-    setDateDue(nowLocalISOForInput());
+    setDateDue(nowLocalISODateForInput());
     setHeaderDsc("");
     setEditLines([]);
   }
@@ -375,7 +514,7 @@ export default function DebtsMasterDetailPage() {
       setHeaderPerson(pers);
 
       setDateRegistered(h?.dateRegistered || nowLocalISOForInput());
-      setDateDue(h?.dateDue || nowLocalISOForInput());
+      setDateDue(h?.dateDue || nowLocalISODateForInput());
       setHeaderDsc(h?.dsc || "");
 
       setEditLines(
@@ -387,8 +526,8 @@ export default function DebtsMasterDetailPage() {
           dsc: l.dsc || "",
         }))
       );
-    } catch(e) {
-      toast.error(getApiErrorMessage(e,"خطا در دریافت بدهی برای ویرایش"));
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "خطا در دریافت بدهی برای ویرایش"));
       setMode("view");
     } finally {
       setLoadingDetail(false);
@@ -483,8 +622,10 @@ export default function DebtsMasterDetailPage() {
       toast.success("حذف شد");
       setDeleteId(null);
       await loadHeaders();
-    } catch(e) {
-      toast.error(getApiErrorMessage(e,"حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)"));
+    } catch (e) {
+      toast.error(
+        getApiErrorMessage(e, "حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)")
+      );
     }
   }
 
@@ -499,18 +640,99 @@ export default function DebtsMasterDetailPage() {
           <Button onClick={startCreate}>+ بدهی جدید</Button>
         </div>
 
+        {/* paging controls */}
+        <div className="flex items-center justify-between gap-2 mb-2 text-sm">
+          <div className="text-zinc-600">
+            نمایش{" "}
+            <b>{pagedHeaders.length === 0 ? 0 : pageIndex * PAGE_SIZE + 1}</b>{" "}
+            تا{" "}
+            <b>
+              {Math.min((pageIndex + 1) * PAGE_SIZE, filteredHeaders.length)}
+            </b>{" "}
+            از <b>{filteredHeaders.length}</b>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              onClick={goPrevPage}
+              disabled={pageIndex === 0}
+            >
+              قبلی
+            </Button>
+
+            <div className="text-zinc-700">
+              صفحه <b>{pageIndex + 1}</b> از <b>{totalPages}</b>
+            </div>
+
+            <Button
+              variant="secondary"
+              onClick={goNextPage}
+              disabled={pageIndex >= totalPages - 1}
+            >
+              بعدی
+            </Button>
+          </div>
+        </div>
+
         <div className="overflow-auto">
           <table className="w-full text-sm">
             <thead className="text-zinc-600">
               <tr className="border-b">
-                <th className="py-2 text-right">کد</th>
-                <th className="py-2 text-right">پروژه</th>
-                <th className="py-2 text-right">شخص/سازمان</th>
-                <th className="py-2 text-right">ثبت</th>
-                <th className="py-2 text-right">سررسید</th>
-                <th className="py-2 text-right">جمع</th>
-                <th className="py-2 text-right">تخصیص</th>
-                <th className="py-2 text-right">مانده</th>
+                <th
+                  className="py-2 text-right cursor-pointer select-none"
+                  onClick={() => toggleSort("project")}
+                >
+                  پروژه <SortIcon active={sortBy === "project"} dir={sortDir} />
+                </th>
+
+                <th
+                  className="py-2 text-right cursor-pointer select-none"
+                  onClick={() => toggleSort("person")}
+                >
+                  شخص/سازمان{" "}
+                  <SortIcon active={sortBy === "person"} dir={sortDir} />
+                </th>
+
+                <th
+                  className="py-2 text-right cursor-pointer select-none"
+                  onClick={() => toggleSort("dateDue")}
+                >
+                  سررسید{" "}
+                  <SortIcon active={sortBy === "dateDue"} dir={sortDir} />
+                </th>
+
+                <th
+                  className="py-2 text-right cursor-pointer select-none"
+                  onClick={() => toggleSort("total")}
+                >
+                  جمع <SortIcon active={sortBy === "total"} dir={sortDir} />
+                </th>
+
+                <th
+                  className="py-2 text-right cursor-pointer select-none"
+                  onClick={() => toggleSort("covered")}
+                >
+                  تخصیص{" "}
+                  <SortIcon active={sortBy === "covered"} dir={sortDir} />
+                </th>
+
+                <th
+                  className="py-2 text-right cursor-pointer select-none"
+                  onClick={() => toggleSort("remaining")}
+                >
+                  مانده{" "}
+                  <SortIcon active={sortBy === "remaining"} dir={sortDir} />
+                </th>
+
+                {/* ✅ NEW: Description in master table */}
+                <th
+                  className="py-2 text-right cursor-pointer select-none"
+                  onClick={() => toggleSort("dsc")}
+                >
+                  توضیحات <SortIcon active={sortBy === "dsc"} dir={sortDir} />
+                </th>
+
                 <th className="py-2 text-right">وضعیت</th>
                 <th className="py-2 text-right">عملیات</th>
               </tr>
@@ -521,22 +743,13 @@ export default function DebtsMasterDetailPage() {
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-2 py-2"
                     placeholder="فیلتر..."
-                    value={hf.debtId}
-                    onChange={(e) =>
-                      setHf((p) => ({ ...p, debtId: e.target.value }))
-                    }
-                  />
-                </th>
-                <th className="py-2">
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-2 py-2"
-                    placeholder="فیلتر..."
                     value={hf.project}
                     onChange={(e) =>
                       setHf((p) => ({ ...p, project: e.target.value }))
                     }
                   />
                 </th>
+
                 <th className="py-2">
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-2 py-2"
@@ -547,16 +760,7 @@ export default function DebtsMasterDetailPage() {
                     }
                   />
                 </th>
-                <th className="py-2">
-                  <input
-                    className="w-full rounded-lg border border-zinc-200 px-2 py-2"
-                    placeholder="فیلتر..."
-                    value={hf.dateRegistered}
-                    onChange={(e) =>
-                      setHf((p) => ({ ...p, dateRegistered: e.target.value }))
-                    }
-                  />
-                </th>
+
                 <th className="py-2">
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-2 py-2"
@@ -567,6 +771,7 @@ export default function DebtsMasterDetailPage() {
                     }
                   />
                 </th>
+
                 <th className="py-2">
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-2 py-2"
@@ -577,6 +782,7 @@ export default function DebtsMasterDetailPage() {
                     }
                   />
                 </th>
+
                 <th className="py-2">
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-2 py-2"
@@ -587,6 +793,7 @@ export default function DebtsMasterDetailPage() {
                     }
                   />
                 </th>
+
                 <th className="py-2">
                   <input
                     className="w-full rounded-lg border border-zinc-200 px-2 py-2"
@@ -597,6 +804,19 @@ export default function DebtsMasterDetailPage() {
                     }
                   />
                 </th>
+
+                {/* ✅ NEW: Description filter */}
+                <th className="py-2">
+                  <input
+                    className="w-full rounded-lg border border-zinc-200 px-2 py-2"
+                    placeholder="فیلتر..."
+                    value={hf.dsc}
+                    onChange={(e) =>
+                      setHf((p) => ({ ...p, dsc: e.target.value }))
+                    }
+                  />
+                </th>
+
                 <th className="py-2" />
                 <th className="py-2" />
               </tr>
@@ -605,18 +825,18 @@ export default function DebtsMasterDetailPage() {
             <tbody>
               {loadingHeaders ? (
                 <tr>
-                  <td className="py-3 text-zinc-500" colSpan={10}>
+                  <td className="py-3 text-zinc-500" colSpan={9}>
                     در حال بارگذاری...
                   </td>
                 </tr>
-              ) : filteredHeaders.length === 0 ? (
+              ) : pagedHeaders.length === 0 ? (
                 <tr>
-                  <td className="py-3 text-zinc-500" colSpan={10}>
+                  <td className="py-3 text-zinc-500" colSpan={9}>
                     موردی یافت نشد.
                   </td>
                 </tr>
               ) : (
-                filteredHeaders.map((r) => {
+                pagedHeaders.map((r) => {
                   const projectId = getAny(r, [
                     "project_id",
                     "projectId",
@@ -645,16 +865,23 @@ export default function DebtsMasterDetailPage() {
                       }`}
                       onClick={() => setSelectedDebtId(r.debt_id)}
                     >
-                      <td className="py-2">{r.debt_id}</td>
                       <td className="py-2">{projectTitle}</td>
                       <td className="py-2">{personName}</td>
-                      <td className="py-2">{r.date_registered}</td>
                       <td className="py-2">{r.date_due}</td>
                       <td className="py-2">{moneyFa(r.total_amount)}</td>
                       <td className="py-2">{moneyFa(r.covered_amount)}</td>
                       <td className="py-2 font-semibold">
                         {moneyFa(remaining)}
                       </td>
+
+                      {/* ✅ NEW: description in row */}
+                      <td
+                        className="py-2 max-w-[260px] truncate"
+                        title={r.dsc || ""}
+                      >
+                        {r.dsc || "-"}
+                      </td>
+
                       <td className="py-2">
                         {remaining > 0 ? (
                           <span className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs">

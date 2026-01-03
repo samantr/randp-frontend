@@ -86,7 +86,7 @@ export default function EditItemModal({
       toast.success("ویرایش شد");
       onUpdated?.(updated);
       onClose?.();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     }
   }

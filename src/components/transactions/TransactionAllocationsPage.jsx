@@ -9,6 +9,8 @@ import Modal from "../common/Modal";
 import LookupTableModal from "../common/LookupTableModal";
 
 import { getTransactionById } from "../../api/transactionsApi";
+import { getPersons } from "../../api/personsApi";
+import { getProjects } from "../../api/projectsApi";
 import {
   listAllocationsByTransaction,
   createAllocationFromTransaction,
@@ -27,6 +29,33 @@ function dateFa(v) {
   return String(v).replace("T", " ").substring(0, 16);
 }
 
+function normalizePageLike(data) {
+  if (Array.isArray(data)) return { content: data, totalPages: 1 };
+  if (data?.content) return data;
+  return { content: [], totalPages: 0 };
+}
+
+function personLabel(p) {
+  if (!p) return "-";
+  if (p.isLegal) return p.companyName || `#${p.id}`;
+  const full = `${p.name || ""} ${p.lastName || ""}`.trim();
+  return full || p.companyName || `#${p.id}`;
+}
+
+function paymentTypeLabel(code) {
+  if (code === "CSH") return "نقد";
+  if (code === "CHK") return "چک";
+  if (code === "OTH") return "سایر";
+  return code || "-";
+}
+
+function transactionTypeLabel(code) {
+  if (code === "EXP") return "هزینه";
+  if (code === "TRN") return "تراکنش";
+  if (code === "OTH") return "سایر";
+  return code || "-";
+}
+
 function debtLabel(d) {
   if (!d) return "-";
   const title = d.personTitle || `#${d.id}`;
@@ -39,6 +68,10 @@ export default function TransactionAllocationsPage() {
 
   const [loadingHeader, setLoadingHeader] = useState(false);
   const [tx, setTx] = useState(null);
+
+  const [lookupsLoading, setLookupsLoading] = useState(false);
+  const [personsMap, setPersonsMap] = useState({});
+  const [projectsMap, setProjectsMap] = useState({});
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
@@ -91,14 +124,48 @@ export default function TransactionAllocationsPage() {
     []
   );
 
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setLookupsLoading(true);
+
+      try {
+        const personsRes = await getPersons({ page: 0, size: 5000, q: "" });
+        const persons = normalizePageLike(personsRes).content || [];
+        const pm = {};
+        for (const p of persons) pm[p.id] = personLabel(p);
+        if (alive) setPersonsMap(pm);
+      } catch {
+        if (alive) setPersonsMap({});
+      }
+
+      try {
+        const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
+        const projects = normalizePageLike(projectsRes).content || projectsRes || [];
+        const pr = {};
+        for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
+        if (alive) setProjectsMap(pr);
+      } catch {
+        if (alive) setProjectsMap({});
+      } finally {
+        if (alive) setLookupsLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
   async function loadHeader() {
     if (!transactionId) return;
     setLoadingHeader(true);
     try {
       const t = await getTransactionById(transactionId);
       setTx(t);
-    } catch {
-      toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات تراکنش"));
+    } catch(e) {
+      toast.error(e,"خطا در دریافت اطلاعات تراکنش");
       setTx(null);
     } finally {
       setLoadingHeader(false);
@@ -111,8 +178,8 @@ export default function TransactionAllocationsPage() {
     try {
       const data = await listAllocationsByTransaction(transactionId);
       setRows(Array.isArray(data) ? data : []);
-    } catch {
-      toast.error(getApiErrorMessage(e, "خطا در دریافت تخصیص‌ها"));
+    } catch(e) {
+      toast.error(e,"خطا در دریافت تخصیص‌ها");
       setRows([]);
     } finally {
       setLoading(false);
@@ -123,9 +190,10 @@ export default function TransactionAllocationsPage() {
     if (!transactionId) return;
     setCandidatesLoading(true);
     try {
-      const data = await listDebtCandidatesForTransaction(transactionId);
+      const data = await listDebtCandidatesForTransaction(transactionId, {});
       setDebtCandidates(Array.isArray(data) ? data : []);
-    } catch {
+    } catch(e) {
+      toast.error(e,"خطا در دریافت گزینه‌های بدهی");
       setDebtCandidates([]);
     } finally {
       setCandidatesLoading(false);
@@ -139,97 +207,80 @@ export default function TransactionAllocationsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactionId]);
 
+  const selectedDebt = debtId ? debtMap[Number(debtId)] : null;
+  const selectedEditDebt = editDebtId ? editDebtMap[Number(editDebtId)] : null;
+
   async function handleCreate() {
-    const dId = Number(debtId);
-    const a = Number(amount);
-
-    if (!Number.isFinite(dId) || dId <= 0) return toast.error(getApiErrorMessage(e, "بدهی را انتخاب کنید"));
-    if (!Number.isFinite(a) || a <= 0) return toast.error(getApiErrorMessage(e, "مبلغ نامعتبر است"));
-
-    // ✅ debt remaining validation
-    const d = debtMap[dId];
-    if (d && a > Number(d.remainingAmount || 0)) {
-      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص نمی‌تواند بیشتر از مانده بدهی باشد"));
+    if (!debtId) {
+      toast.error("لطفاً بدهی را انتخاب کنید");
+      return;
     }
-
-    // ✅ transaction remaining validation
-    if (tx && a > Number(tx.remainingAmount || 0)) {
-      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص نمی‌تواند بیشتر از مانده تراکنش باشد"));
+    const v = Number(amount || 0);
+    if (!v || v <= 0) {
+      toast.error("مبلغ نامعتبر است");
+      return;
     }
 
     try {
       await createAllocationFromTransaction(transactionId, {
-        debtId: dId,
-        coveredAmount: a,
-        dsc: dsc?.trim() || null,
+        debtId: Number(debtId),
+        coveredAmount: v,
+        dsc,
       });
-      toast.success("تخصیص ثبت شد");
+      toast.success("ثبت شد");
       setDebtId(null);
       setAmount("");
       setDsc("");
       await loadHeader();
       await loadAllocations();
       await loadCandidates();
-    } catch {
-      toast.error(getApiErrorMessage(e, "خطا در ثبت تخصیص"));
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "ثبت ممکن نیست");
     }
   }
 
-  function openEdit(row) {
+  async function openEdit(row) {
     setEditing(row);
-
-    // ✅ FIX: backend uses debtHeaderId (not debtId)
-    setEditDebtId(row.debtHeaderId || null);
-
-    setEditAmount(String(row.coveredAmount ?? ""));
-    setEditDsc(row.dsc || "");
     setEditOpen(true);
+    setEditDebtId(row.debtId ?? row.debtHeaderId);
+    setEditAmount(String(row.coveredAmount || ""));
+    setEditDsc(row.dsc || "");
 
-    (async () => {
-      try {
-        const data = await listDebtCandidatesForTransaction(transactionId, { allocationId: row.id });
-        setEditDebtCandidates(Array.isArray(data) ? data : []);
-      } catch {
-        setEditDebtCandidates([]);
-      }
-    })();
+    try {
+      const data = await listDebtCandidatesForTransaction(transactionId, { allocationId: row.id });
+      setEditDebtCandidates(Array.isArray(data) ? data : []);
+    } catch {
+      setEditDebtCandidates([]);
+    }
   }
 
   async function handleUpdate() {
-    if (!editing) return;
+    if (!editing?.id) return;
 
-    const dId = Number(editDebtId);
-    const a = Number(editAmount);
-
-    if (!Number.isFinite(dId) || dId <= 0) return toast.error(getApiErrorMessage(e, "بدهی را انتخاب کنید"));
-    if (!Number.isFinite(a) || a <= 0) return toast.error(getApiErrorMessage(e, "مبلغ نامعتبر است"));
-
-    const d = editDebtMap[dId];
-    if (d && a > Number(d.editableRemainingAmount || 0)) {
-      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص بیشتر از مانده قابل ویرایش بدهی است"));
+    if (!editDebtId) {
+      toast.error("لطفاً بدهی را انتخاب کنید");
+      return;
     }
-
-    // ✅ transaction remaining validation (client-side)
-    // (for edit mode: tx.remainingAmount already includes existing allocations in backend,
-    // but we still keep this basic check)
-    if (tx && a > Number(tx.amountPaid || 0)) {
-      return toast.error(getApiErrorMessage(e, "مبلغ تخصیص نامعتبر است"));
+    const v = Number(editAmount || 0);
+    if (!v || v <= 0) {
+      toast.error("مبلغ نامعتبر است");
+      return;
     }
 
     try {
       await updateAllocationFromTransaction(transactionId, editing.id, {
-        debtId: dId,
-        coveredAmount: a,
-        dsc: editDsc?.trim() || null,
+        debtId: Number(editDebtId),
+        coveredAmount: v,
+        dsc: editDsc,
       });
-      toast.success("ویرایش انجام شد");
+      toast.success("ویرایش شد");
       setEditOpen(false);
       setEditing(null);
       await loadHeader();
       await loadAllocations();
       await loadCandidates();
-    } catch {
-      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
+    } catch (e) {
+      toast.error(e?.response?.data?.message || "خطا در ویرایش");
     }
   }
 
@@ -241,13 +292,10 @@ export default function TransactionAllocationsPage() {
       await loadHeader();
       await loadAllocations();
       await loadCandidates();
-    } catch {
-      toast.error(getApiErrorMessage(e, "حذف ممکن نیست"));
+    } catch(e) {
+      toast.error(e,"حذف ممکن نیست");
     }
   }
-
-  const selectedDebt = debtId ? debtMap[Number(debtId)] : null;
-  const selectedEditDebt = editDebtId ? editDebtMap[Number(editDebtId)] : null;
 
   return (
     <div className="space-y-4">
@@ -260,12 +308,53 @@ export default function TransactionAllocationsPage() {
           </Button>
         </div>
 
-        {loadingHeader ? (
+        {loadingHeader || lookupsLoading ? (
           <div className="text-sm text-zinc-500 mt-2">در حال بارگذاری...</div>
         ) : tx ? (
-          <div className="text-sm text-zinc-700 mt-2">
-            کد: <b>{tx.code || "-"}</b> | مبلغ: <b>{moneyFa(tx.amountPaid)}</b> | مانده:{" "}
-            <b className="text-emerald-600">{moneyFa(tx.remainingAmount)}</b> | ثبت: <b>{dateFa(tx.dateRegistered)}</b>
+          <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl bg-zinc-50 p-3 text-sm md:grid-cols-2">
+            <div>
+              <span className="text-zinc-600">کد:</span> <b>{tx.code || "-"}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">پروژه:</span>{" "}
+              <b>{projectsMap[tx.projectId] || (tx.projectId ? `#${tx.projectId}` : "-")}</b>
+            </div>
+
+            <div>
+              <span className="text-zinc-600">از:</span>{" "}
+              <b>{personsMap[tx.fromPersonId] || (tx.fromPersonId ? `#${tx.fromPersonId}` : "-")}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">به:</span>{" "}
+              <b>{personsMap[tx.toPersonId] || (tx.toPersonId ? `#${tx.toPersonId}` : "-")}</b>
+            </div>
+
+            <div>
+              <span className="text-zinc-600">سررسید:</span> <b>{tx.dateDue || "-"}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">ثبت:</span> <b>{dateFa(tx.dateRegistered)}</b>
+            </div>
+
+            <div>
+              <span className="text-zinc-600">نوع پرداخت:</span> <b>{paymentTypeLabel(tx.paymentType)}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">نوع تراکنش:</span> <b>{transactionTypeLabel(tx.transactionType)}</b>
+            </div>
+
+            <div className="md:col-span-2">
+              <span className="text-zinc-600">توضیحات:</span> <b>{tx.dsc || "-"}</b>
+            </div>
+
+            <div className="md:col-span-2 border-t pt-2">
+              <span className="text-zinc-600">مبلغ:</span> <b>{moneyFa(tx.amountPaid)}</b>{" "}
+              <span className="text-zinc-400">|</span>{" "}
+              <span className="text-zinc-600">تخصیص:</span> <b>{moneyFa(tx.allocatedAmount)}</b>{" "}
+              <span className="text-zinc-400">|</span>{" "}
+              <span className="text-zinc-600">مانده:</span>{" "}
+              <b className="text-emerald-700">{moneyFa(tx.remainingAmount)}</b>
+            </div>
           </div>
         ) : null}
       </div>
@@ -275,7 +364,6 @@ export default function TransactionAllocationsPage() {
         <div className="font-semibold mb-2">ثبت تخصیص جدید</div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          {/* Lookup field */}
           <div>
             <label className="block text-sm text-zinc-700 mb-1">بدهی</label>
             <div className="flex gap-2">
@@ -302,6 +390,8 @@ export default function TransactionAllocationsPage() {
             <Button onClick={handleCreate}>ثبت</Button>
           </div>
         </div>
+
+        <div className="text-xs text-zinc-500 mt-2">مانده قابل تخصیص تراکنش: {moneyFa(tx?.remainingAmount)}</div>
       </div>
 
       {/* List */}
@@ -318,8 +408,6 @@ export default function TransactionAllocationsPage() {
               <thead className="text-zinc-600">
                 <tr className="border-b">
                   <th className="py-2 text-right">بدهی</th>
-                  <th className="py-2 text-right">جمع بدهی</th>
-                  <th className="py-2 text-right">مانده بدهی</th>
                   <th className="py-2 text-right">مبلغ تخصیص</th>
                   <th className="py-2 text-right">توضیحات</th>
                   <th className="py-2 text-right">عملیات</th>
@@ -327,14 +415,10 @@ export default function TransactionAllocationsPage() {
               </thead>
               <tbody>
                 {rows.map((r) => {
-                  // ✅ FIX: backend returns debtHeaderId
-                  const d = debtMap[r.debtHeaderId];
-
+                  const d = debtMap[r.debtId ?? r.debtHeaderId];
                   return (
                     <tr key={r.id} className="border-b last:border-b-0">
-                      <td className="py-2 font-semibold">{d?.personTitle || `Debt #${r.debtHeaderId}`}</td>
-                      <td className="py-2">{d ? moneyFa(d.totalAmount) : "-"}</td>
-                      <td className="py-2">{d ? moneyFa(d.remainingAmount) : "-"}</td>
+                      <td className="py-2 font-semibold">{d?.personTitle || `#${r.debtId ?? r.debtHeaderId}`}</td>
                       <td className="py-2 font-semibold">{moneyFa(r.coveredAmount)}</td>
                       <td className="py-2">{r.dsc || "-"}</td>
                       <td className="py-2">
@@ -359,14 +443,13 @@ export default function TransactionAllocationsPage() {
         )}
       </div>
 
-      {/* Create lookup modal */}
       <LookupTableModal
         open={debtLookupOpen}
         title="انتخاب بدهی"
         rows={debtCandidates}
         columns={debtLookupColumns}
-        searchPlaceholder="جستجو بر اساس نام شخص/سازمان..."
-        searchKeys={["personTitle", "id"]}
+        searchPlaceholder="جستجو..."
+        searchKeys={["personTitle"]}
         onSelect={(d) => setDebtId(d.id)}
         onClose={() => setDebtLookupOpen(false)}
       />
@@ -402,7 +485,6 @@ export default function TransactionAllocationsPage() {
         }
       >
         <div className="space-y-3">
-          {/* Edit lookup field */}
           <div>
             <label className="block text-sm text-zinc-700 mb-1">بدهی</label>
             <div className="flex gap-2">
@@ -419,12 +501,6 @@ export default function TransactionAllocationsPage() {
                 پاک
               </Button>
             </div>
-            {selectedEditDebt ? (
-              <div className="text-xs text-zinc-600 mt-1">
-                مانده: <b>{moneyFa(selectedEditDebt.remainingAmount)}</b> | قابل‌ویرایش:{" "}
-                <b>{moneyFa(selectedEditDebt.editableRemainingAmount)}</b>
-              </div>
-            ) : null}
           </div>
 
           <Input label="مبلغ تخصیص" type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} />
@@ -432,14 +508,13 @@ export default function TransactionAllocationsPage() {
         </div>
       </Modal>
 
-      {/* Edit lookup modal */}
       <LookupTableModal
         open={editDebtLookupOpen}
         title="انتخاب بدهی"
         rows={editDebtCandidates}
         columns={debtLookupColumns}
-        searchPlaceholder="جستجو بر اساس نام شخص/سازمان..."
-        searchKeys={["personTitle", "id"]}
+        searchPlaceholder="جستجو..."
+        searchKeys={["personTitle"]}
         onSelect={(d) => setEditDebtId(d.id)}
         onClose={() => setEditDebtLookupOpen(false)}
       />

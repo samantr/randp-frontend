@@ -93,7 +93,7 @@ export default function ProjectsListPage() {
         if (prev && prev.size > 0) return prev;
         return collectAllIds(res || []);
       });
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در دریافت لیست پروژه‌ها"));
     } finally {
       setLoading(false);
@@ -139,7 +139,7 @@ export default function ProjectsListPage() {
       toast.success("حذف شد");
       setDeleteId(null);
       await load();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در حذف پروژه"));
     }
   }

@@ -18,7 +18,7 @@ export default function LoginPage() {
       localStorage.setItem("token", token);
       toast.success("ورود موفق");
       window.location.href = "/";
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "نام کاربری یا رمز عبور اشتباه است"));
     } finally {
       setLoading(false);

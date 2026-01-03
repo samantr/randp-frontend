@@ -6,6 +6,7 @@ import toast from "react-hot-toast";
 import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { createProject, getProjects } from "../../api/projectsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 export default function QuickAddProjectModal({ open, onClose, onCreated }) {
   const [title, setTitle] = useState("");
@@ -53,7 +54,7 @@ export default function QuickAddProjectModal({ open, onClose, onCreated }) {
     };
 
     if (!payload.title) {
-      toast.error(getApiErrorMessage(e, "عنوان پروژه را وارد کنید"));
+      toast.error("عنوان پروژه را وارد کنید");
       return;
     }
 
@@ -62,7 +63,7 @@ export default function QuickAddProjectModal({ open, onClose, onCreated }) {
       toast.success("پروژه ثبت شد");
       onCreated?.(created);
       onClose?.();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در ثبت پروژه"));
     }
   }

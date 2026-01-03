@@ -182,7 +182,7 @@ export default function EditTransactionModal({
       toast.success("ویرایش شد");
       onClose?.();
       await onUpdated?.();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
     } finally {
       setSaving(false);

@@ -54,21 +54,21 @@ export default function QuickAddItemModal({
   async function handleCreate() {
     const payload = {
       categoryId: category?.id || null,
-      code: code?.trim(),
+      code: code?.trim() || null, // optional
       title: title?.trim(),
       dsc: dsc?.trim() || null,
     };
 
     if (!payload.categoryId) {
-      toast.error(getApiErrorMessage(e, "دسته‌بندی را انتخاب کنید"));
+      toast.error( "دسته‌بندی را انتخاب کنید");
       return;
     }
-    if (!payload.code) {
-      toast.error(getApiErrorMessage(e, "کد را وارد کنید"));
-      return;
-    }
+    // if (!payload.code) {
+    //   toast.error("کد را وارد کنید");
+    //   return;
+    // }
     if (!payload.title) {
-      toast.error(getApiErrorMessage(e, "عنوان را وارد کنید"));
+      toast.error("عنوان را وارد کنید");
       return;
     }
 
@@ -110,10 +110,10 @@ export default function QuickAddItemModal({
         </div>
 
         <Input
-          label="کد"
+          label="کد (اختیاری)"
           value={code}
           onChange={(e) => setCode(e.target.value)}
-          placeholder="مثلاً CEM001"
+          placeholder="خالی بگذارید تا خودکار تولید شود"
         />
 
         <Input

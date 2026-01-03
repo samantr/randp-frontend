@@ -5,7 +5,6 @@ import toast from "react-hot-toast";
 import Button from "../common/Button";
 import Input from "../common/Input";
 import ConfirmDialog from "../common/ConfirmDialog";
-import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 import {
   listDebtDocuments,
@@ -17,6 +16,12 @@ import {
   deleteTransactionDocument,
   downloadTransactionDocument,
 } from "../../api/documentsApi";
+
+import { getDebtView } from "../../api/debtsApi";
+import { getTransactionById } from "../../api/transactionsApi";
+import { getPersons } from "../../api/personsApi";
+import { getProjects } from "../../api/projectsApi";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 const MAX_FILE_MB = 10;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
@@ -42,6 +47,42 @@ function extractFilenameFromHeader(contentDisposition) {
 function safeStr(s) {
   if (s == null) return "";
   return String(s);
+}
+
+function normalizePageLike(data) {
+  if (Array.isArray(data)) return { content: data, totalPages: 1 };
+  if (data?.content) return data;
+  return { content: [], totalPages: 0 };
+}
+
+function personLabel(p) {
+  if (!p) return "-";
+  if (p.isLegal) return p.companyName || `#${p.id}`;
+  const full = `${p.name || ""} ${p.lastName || ""}`.trim();
+  return full || p.companyName || `#${p.id}`;
+}
+
+function paymentTypeLabel(code) {
+  if (code === "CSH") return "نقد";
+  if (code === "CHK") return "چک";
+  if (code === "OTH") return "سایر";
+  return code || "-";
+}
+
+function transactionTypeLabel(code) {
+  if (code === "EXP") return "هزینه";
+  if (code === "TRN") return "تراکنش";
+  if (code === "OTH") return "سایر";
+  return code || "-";
+}
+
+function moneyFa(v) {
+  return Number(v || 0).toLocaleString("fa-IR");
+}
+
+function dateFa(v) {
+  if (!v) return "-";
+  return String(v).replace("T", " ").substring(0, 16);
 }
 
 function getOwnerConfig(ownerType) {
@@ -84,6 +125,14 @@ export default function DocumentsPage({ ownerType }) {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
 
+  // Header details
+  const [lookupsLoading, setLookupsLoading] = useState(false);
+  const [personsMap, setPersonsMap] = useState({});
+  const [projectsMap, setProjectsMap] = useState({});
+  const [headerLoading, setHeaderLoading] = useState(false);
+  const [debtView, setDebtView] = useState(null); // only for ownerType=debt
+  const [tx, setTx] = useState(null); // only for ownerType=transaction
+
   const [file, setFile] = useState(null);
   const [dsc, setDsc] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -122,6 +171,53 @@ export default function DocumentsPage({ ownerType }) {
     if (fileInputRef.current) fileInputRef.current.value = "";
   }, []);
 
+  const loadLookups = useCallback(async () => {
+    setLookupsLoading(true);
+    try {
+      const personsRes = await getPersons({ page: 0, size: 5000, q: "" });
+      const persons = normalizePageLike(personsRes).content || [];
+      const pm = {};
+      for (const p of persons) pm[p.id] = personLabel(p);
+      setPersonsMap(pm);
+    } catch {
+      setPersonsMap({});
+    }
+
+    try {
+      const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
+      const projects = normalizePageLike(projectsRes).content || projectsRes || [];
+      const pr = {};
+      for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
+      setProjectsMap(pr);
+    } catch {
+      setProjectsMap({});
+    } finally {
+      setLookupsLoading(false);
+    }
+  }, []);
+
+  const loadHeader = useCallback(async () => {
+    if (!ownerId) return;
+    setHeaderLoading(true);
+    try {
+      if (ownerType === "debt") {
+        const v = await getDebtView(ownerId);
+        setDebtView(v || null);
+        setTx(null);
+      } else {
+        const t = await getTransactionById(ownerId);
+        setTx(t || null);
+        setDebtView(null);
+      }
+    } catch {
+      toast.error(ownerType === "debt" ? "خطا در دریافت اطلاعات بدهی" : "خطا در دریافت اطلاعات تراکنش");
+      setDebtView(null);
+      setTx(null);
+    } finally {
+      setHeaderLoading(false);
+    }
+  }, [ownerId, ownerType]);
+
   const load = useCallback(async () => {
     if (!ownerId) return;
     setLoading(true);
@@ -129,12 +225,20 @@ export default function DocumentsPage({ ownerType }) {
       const data = await cfg.list(ownerId);
       setRows(Array.isArray(data) ? data : []);
     } catch {
-      toast.error(getApiErrorMessage(e, "خطا در دریافت لیست پیوست‌ها"));
+      toast.error("خطا در دریافت لیست پیوست‌ها");
       setRows([]);
     } finally {
       setLoading(false);
     }
   }, [cfg, ownerId]);
+
+  useEffect(() => {
+    loadLookups();
+  }, [loadLookups]);
+
+  useEffect(() => {
+    loadHeader();
+  }, [loadHeader]);
 
   useEffect(() => {
     load();
@@ -144,7 +248,7 @@ export default function DocumentsPage({ ownerType }) {
     if (!ownerId) return;
 
     if (!file) {
-      toast.error(getApiErrorMessage(e, "لطفاً فایل را انتخاب کنید"));
+      toast.error("لطفاً فایل را انتخاب کنید");
       return;
     }
     if (file.size > MAX_FILE_BYTES) {
@@ -183,7 +287,7 @@ export default function DocumentsPage({ ownerType }) {
         a.remove();
         window.URL.revokeObjectURL(url);
       } catch {
-        toast.error(getApiErrorMessage(e, "خطا در دانلود فایل"));
+        toast.error("خطا در دانلود فایل");
       }
     },
     [cfg]
@@ -204,7 +308,7 @@ export default function DocumentsPage({ ownerType }) {
         const type = canPreview(mime, fileName);
 
         if (!type) {
-          toast.error(getApiErrorMessage(e, "پیش‌نمایش برای این نوع فایل فعال نیست"));
+          toast.error("پیش‌نمایش برای این نوع فایل فعال نیست");
           return;
         }
 
@@ -217,7 +321,7 @@ export default function DocumentsPage({ ownerType }) {
           title: fileName,
         });
       } catch {
-        toast.error(getApiErrorMessage(e, "خطا در دریافت فایل برای پیش‌نمایش"));
+        toast.error("خطا در دریافت فایل برای پیش‌نمایش");
       }
     },
     [cfg, cleanupPreview]
@@ -252,17 +356,108 @@ export default function DocumentsPage({ ownerType }) {
     },
   };
 
+  const debtHeader = debtView?.header || null;
+
   return (
     <div className="space-y-4">
       {/* header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-bold">{cfg.title}</h1>
-          <div className="text-xs text-zinc-600">شناسه: {ownerId}</div>
+      <div className="rounded-2xl border bg-white p-4">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-bold">{cfg.title}</h1>
+            <div className="text-xs text-zinc-600">
+              {ownerType === "debt" ? "شناسه بدهی" : "شناسه تراکنش"}: {ownerId}
+            </div>
+          </div>
+          <Button variant="secondary" onClick={() => navigate(cfg.backTo)}>
+            بازگشت
+          </Button>
         </div>
-        <Button variant="secondary" onClick={() => navigate(cfg.backTo)}>
-          بازگشت
-        </Button>
+
+        {lookupsLoading || headerLoading ? (
+          <div className="mt-3 text-sm text-zinc-500">در حال بارگذاری اطلاعات...</div>
+        ) : ownerType === "debt" ? (
+          debtHeader ? (
+            <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl bg-zinc-50 p-3 text-sm md:grid-cols-2">
+              <div>
+                <span className="text-zinc-600">پروژه:</span>{" "}
+                <b>{projectsMap[debtHeader.projectId] || (debtHeader.projectId ? `#${debtHeader.projectId}` : "-")}</b>
+              </div>
+              <div>
+                <span className="text-zinc-600">شخص/سازمان:</span>{" "}
+                <b>{personsMap[debtHeader.personId] || (debtHeader.personId ? `#${debtHeader.personId}` : "-")}</b>
+              </div>
+              <div>
+                <span className="text-zinc-600">سررسید:</span> <b>{safeStr(debtHeader.dateDue) || "-"}</b>
+              </div>
+              <div>
+                <span className="text-zinc-600">ثبت:</span> <b>{dateFa(debtHeader.dateRegistered)}</b>
+              </div>
+
+              <div className="md:col-span-2">
+                <span className="text-zinc-600">توضیحات:</span> <b>{debtHeader.dsc || "-"}</b>
+              </div>
+
+              <div className="md:col-span-2 border-t pt-2">
+                <span className="text-zinc-600">جمع:</span> <b>{moneyFa(debtView?.totalAmount)}</b>{" "}
+                <span className="text-zinc-400">|</span>{" "}
+                <span className="text-zinc-600">تخصیص:</span> <b>{moneyFa(debtView?.coveredAmount)}</b>{" "}
+                <span className="text-zinc-400">|</span>{" "}
+                <span className="text-zinc-600">مانده:</span>{" "}
+                <b className="text-emerald-700">{moneyFa(debtView?.remainingAmount)}</b>
+              </div>
+            </div>
+          ) : (
+            <div className="mt-3 text-sm text-zinc-500">اطلاعات بدهی موجود نیست.</div>
+          )
+        ) : tx ? (
+          <div className="mt-3 grid grid-cols-1 gap-2 rounded-xl bg-zinc-50 p-3 text-sm md:grid-cols-2">
+            <div>
+              <span className="text-zinc-600">کد:</span> <b>{tx.code || "-"}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">پروژه:</span>{" "}
+              <b>{projectsMap[tx.projectId] || (tx.projectId ? `#${tx.projectId}` : "-")}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">از:</span>{" "}
+              <b>{personsMap[tx.fromPersonId] || (tx.fromPersonId ? `#${tx.fromPersonId}` : "-")}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">به:</span>{" "}
+              <b>{personsMap[tx.toPersonId] || (tx.toPersonId ? `#${tx.toPersonId}` : "-")}</b>
+            </div>
+
+            <div>
+              <span className="text-zinc-600">سررسید:</span> <b>{safeStr(tx.dateDue) || "-"}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">ثبت:</span> <b>{dateFa(tx.dateRegistered)}</b>
+            </div>
+
+            <div>
+              <span className="text-zinc-600">نوع پرداخت:</span> <b>{paymentTypeLabel(tx.paymentType)}</b>
+            </div>
+            <div>
+              <span className="text-zinc-600">نوع تراکنش:</span> <b>{transactionTypeLabel(tx.transactionType)}</b>
+            </div>
+
+            <div className="md:col-span-2">
+              <span className="text-zinc-600">توضیحات:</span> <b>{tx.dsc || "-"}</b>
+            </div>
+
+            <div className="md:col-span-2 border-t pt-2">
+              <span className="text-zinc-600">مبلغ:</span> <b>{moneyFa(tx.amountPaid)}</b>{" "}
+              <span className="text-zinc-400">|</span>{" "}
+              <span className="text-zinc-600">تخصیص:</span> <b>{moneyFa(tx.allocatedAmount)}</b>{" "}
+              <span className="text-zinc-400">|</span>{" "}
+              <span className="text-zinc-600">مانده:</span>{" "}
+              <b className="text-emerald-700">{moneyFa(tx.remainingAmount)}</b>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-3 text-sm text-zinc-500">اطلاعات تراکنش موجود نیست.</div>
+        )}
       </div>
 
       {/* upload box */}
@@ -275,9 +470,7 @@ export default function DocumentsPage({ ownerType }) {
           }`}
           {...dropHandlers}
         >
-          {/* Grid aligned */}
           <div className="grid grid-cols-1 gap-3 md:grid-cols-12 md:items-end">
-            {/* File column */}
             <div className="md:col-span-4">
               <div className="mb-1 text-xs text-zinc-600">فایل</div>
               <div className="flex gap-2">
@@ -295,11 +488,7 @@ export default function DocumentsPage({ ownerType }) {
                 {file ? (
                   <span>
                     انتخاب شد: <span className="font-semibold">{file.name}</span> ({bytesLabel(file.size)})
-                    <button
-                      type="button"
-                      className="mr-2 underline"
-                      onClick={clearSelectedFile}
-                    >
+                    <button type="button" className="mr-2 underline" onClick={clearSelectedFile}>
                       پاک کردن
                     </button>
                   </span>
@@ -308,8 +497,7 @@ export default function DocumentsPage({ ownerType }) {
                 )}
               </div>
             </div>
-                
-            {/* Description column */}
+
             <div className="md:col-span-6">
               <Input
                 label="توضیحات (اختیاری)"
@@ -319,7 +507,6 @@ export default function DocumentsPage({ ownerType }) {
               />
             </div>
 
-            {/* Button column */}
             <div className="md:col-span-2">
               <Button className="w-full" onClick={onUpload} disabled={uploading}>
                 {uploading ? "در حال آپلود..." : "آپلود"}
@@ -395,7 +582,6 @@ export default function DocumentsPage({ ownerType }) {
         </div>
       </div>
 
-      {/* delete confirm */}
       <ConfirmDialog
         open={!!deleteTarget}
         title="حذف پیوست"
@@ -404,13 +590,9 @@ export default function DocumentsPage({ ownerType }) {
         onCancel={() => setDeleteTarget(null)}
       />
 
-      {/* preview modal (simple) */}
       {preview && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-3" onClick={cleanupPreview}>
-          <div
-            className="w-full max-w-5xl rounded-2xl bg-white p-3"
-            onClick={(e) => e.stopPropagation()}
-          >
+          <div className="w-full max-w-5xl rounded-2xl bg-white p-3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between">
               <div className="text-sm font-semibold">{preview.title}</div>
               <Button variant="secondary" onClick={cleanupPreview}>
@@ -420,23 +602,13 @@ export default function DocumentsPage({ ownerType }) {
 
             <div className="h-[75vh] w-full overflow-hidden rounded-xl border bg-zinc-50">
               {preview.type === "image" ? (
-                <img
-                  src={preview.url}
-                  alt={preview.title}
-                  className="h-full w-full object-contain"
-                />
+                <img src={preview.url} alt={preview.title} className="h-full w-full object-contain" />
               ) : (
-                <iframe
-                  title={preview.title}
-                  src={preview.url}
-                  className="h-full w-full"
-                />
+                <iframe title={preview.title} src={preview.url} className="h-full w-full" />
               )}
             </div>
 
-            <div className="mt-2 text-xs text-zinc-500">
-              اگر فایل بزرگ است، ممکن است باز شدن پیش‌نمایش کمی طول بکشد.
-            </div>
+            <div className="mt-2 text-xs text-zinc-500">اگر فایل بزرگ است، ممکن است باز شدن پیش‌نمایش کمی طول بکشد.</div>
           </div>
         </div>
       )}

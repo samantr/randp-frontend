@@ -146,7 +146,7 @@ export default function PersonsListPage() {
       if (nextPage !== page) setPage(nextPage);
 
       await load({ nextPage });
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }

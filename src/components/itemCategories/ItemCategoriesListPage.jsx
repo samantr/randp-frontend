@@ -154,7 +154,7 @@ export default function ItemCategoriesListPage() {
       setDeleteId(null);
 
       await load();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }

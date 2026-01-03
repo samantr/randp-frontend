@@ -105,7 +105,7 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
     if (!project?.id) e.project = "پروژه را انتخاب کنید";
     if (!fromPerson?.id) e.fromPerson = "فرستنده را انتخاب کنید";
     if (!toPerson?.id) e.toPerson = "گیرنده را انتخاب کنید";
-    if (!code.trim()) e.code = "کد را وارد کنید";
+    // if (!code.trim()) e.code = "کد را وارد کنید";
     if (!dateDue) e.dateDue = "تاریخ سررسید را وارد کنید";
     if (!amountPaid || Number(amountPaid) <= 0) e.amountPaid = "مبلغ معتبر وارد کنید";
     if (!dateRegistered) e.dateRegistered = "تاریخ ثبت را وارد کنید";
@@ -146,12 +146,12 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
         projectId: project.id,
         fromPersonId: fromPerson.id,
         toPersonId: toPerson.id,
-        code: code.trim(),
+        code: code.trim() || null, // optional
         dateDue,
         amountPaid: Number(amountPaid),
         paymentType,
         transactionType,
-        dateRegistered, // YYYY-MM-DDTHH:mm
+        dateRegistered,
         dsc: dsc?.trim() || null,
       };
 
@@ -159,7 +159,7 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
       toast.success("ثبت شد");
       onClose?.();
       await onCreated?.();
-    } catch {
+    } catch(e) {
       toast.error(getApiErrorMessage(e, "خطا در ثبت تراکنش"));
     } finally {
       setSaving(false);
@@ -253,7 +253,12 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Input label="کد" value={code} onChange={(e) => setCode(e.target.value)} error={errors.code} />
+            <Input
+                label="کد (اختیاری)"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                placeholder="خالی بگذارید تا خودکار تولید شود"
+              />
             <Input
               label="مبلغ"
               type="number"
