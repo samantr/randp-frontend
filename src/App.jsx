@@ -16,6 +16,7 @@ import DebtAllocationsPage from "./components/debts/DebtAllocationsPage";
 import TransactionAllocationsPage from "./components/transactions/TransactionAllocationsPage";
 import DocumentsPage from "./components/documents/DocumentsPage";
 
+import DashboardPage from "./pages/dashboard/DashboardPage";
 
 function AppLayout() {
   return (
@@ -35,7 +36,7 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
 
         <Route element={<AppLayout />}>
-          <Route path="/" element={<div className="text-sm text-zinc-700">داشبورد (به زودی)</div>} />
+          <Route path="/" element={<DashboardPage />} />
           <Route path="/persons" element={<PersonsListPage />} />
           <Route path="/units" element={<UnitsListPage />} />
           <Route path="/item-categories" element={<ItemCategoriesListPage />} />
