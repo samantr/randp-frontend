@@ -1,16 +1,14 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
-import Button from "../common/Button";
-import Input from "../common/Input";
-import ConfirmDialog from "../common/ConfirmDialog";
-import Modal from "../common/Modal";
-import LookupTableModal from "../common/LookupTableModal";
+import Button from "../common/Button.jsx";
+import Input from "../common/Input.jsx";
+import ConfirmDialog from "../common/ConfirmDialog.jsx";
+import Modal from "../common/Modal.jsx";
+import LookupTableModal from "../common/LookupTableModal.jsx";
 
 import { getDebtView } from "../../api/debtsApi";
-import { getPersons } from "../../api/personsApi";
-import { getProjects } from "../../api/projectsApi";
 import {
   listAllocations,
   createAllocation,
@@ -29,19 +27,6 @@ function dateFa(v) {
   return String(v).replace("T", " ").substring(0, 16);
 }
 
-function normalizePageLike(data) {
-  if (Array.isArray(data)) return { content: data, totalPages: 1 };
-  if (data?.content) return data;
-  return { content: [], totalPages: 0 };
-}
-
-function personLabel(p) {
-  if (!p) return "-";
-  if (p.isLegal) return p.companyName || `#${p.id}`;
-  const full = `${p.name || ""} ${p.lastName || ""}`.trim();
-  return full || p.companyName || `#${p.id}`;
-}
-
 function txLabel(tx) {
   if (!tx) return "-";
   const code = tx.code || `#${tx.id}`;
@@ -53,19 +38,24 @@ function txLabel(tx) {
 export default function DebtAllocationsPage() {
   const { debtId } = useParams();
   const navigate = useNavigate();
+  const [sp] = useSearchParams();
+
+  const returnTo = sp.get("return"); // encoded list URL from Debts page
+
+  const handleBack = () => {
+    if (returnTo) navigate(decodeURIComponent(returnTo));
+    else navigate(-1);
+  };
 
   const [loadingHeader, setLoadingHeader] = useState(false);
   const [debtView, setDebtView] = useState(null);
-
-  const [lookupsLoading, setLookupsLoading] = useState(false);
-  const [personsMap, setPersonsMap] = useState({});
-  const [projectsMap, setProjectsMap] = useState({});
 
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState([]);
 
   const [candidatesLoading, setCandidatesLoading] = useState(false);
   const [txCandidates, setTxCandidates] = useState([]);
+
   const txMap = useMemo(() => {
     const m = {};
     for (const t of txCandidates || []) m[t.id] = t;
@@ -101,11 +91,18 @@ export default function DebtAllocationsPage() {
   // delete confirm
   const [deleteTarget, setDeleteTarget] = useState(null);
 
-  const remainingDebt = useMemo(() => Number(debtView?.remainingAmount || 0), [debtView]);
+  const remainingDebt = useMemo(
+    () => Number(debtView?.remainingAmount || 0),
+    [debtView]
+  );
 
   const txLookupColumns = useMemo(
     () => [
-      { key: "code", title: "کد", render: (r) => <span className="font-semibold">{r.code || `#${r.id}`}</span> },
+      {
+        key: "code",
+        title: "کد",
+        render: (r) => <span className="font-semibold">{r.code || `#${r.id}`}</span>,
+      },
       { key: "dateRegistered", title: "ثبت", render: (r) => dateFa(r.dateRegistered) },
       { key: "amountPaid", title: "مبلغ", render: (r) => moneyFa(r.amountPaid) },
       { key: "allocatedAmount", title: "تخصیص", render: (r) => moneyFa(r.allocatedAmount) },
@@ -115,47 +112,14 @@ export default function DebtAllocationsPage() {
     []
   );
 
-  useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      setLookupsLoading(true);
-      try {
-        const personsRes = await getPersons({ page: 0, size: 5000, q: "" });
-        const persons = normalizePageLike(personsRes).content || [];
-        const pm = {};
-        for (const p of persons) pm[p.id] = personLabel(p);
-        if (alive) setPersonsMap(pm);
-      } catch {
-        if (alive) setPersonsMap({});
-      }
-
-      try {
-        const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
-        const projects = normalizePageLike(projectsRes).content || projectsRes || [];
-        const pr = {};
-        for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
-        if (alive) setProjectsMap(pr);
-      } catch {
-        if (alive) setProjectsMap({});
-      } finally {
-        if (alive) setLookupsLoading(false);
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
   async function loadHeader() {
     if (!debtId) return;
     setLoadingHeader(true);
     try {
       const v = await getDebtView(debtId);
       setDebtView(v);
-    } catch(e) {
-      toast.error(getApiErrorMessage(e,"خطا در دریافت اطلاعات بدهی"));
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات بدهی"));
       setDebtView(null);
     } finally {
       setLoadingHeader(false);
@@ -168,8 +132,8 @@ export default function DebtAllocationsPage() {
     try {
       const data = await listAllocations(debtId);
       setRows(Array.isArray(data) ? data : []);
-    } catch(e) {
-      toast.error(getApiErrorMessage("خطا در دریافت تخصیص‌ها"));
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "خطا در دریافت تخصیص‌ها"));
       setRows([]);
     } finally {
       setLoading(false);
@@ -182,8 +146,8 @@ export default function DebtAllocationsPage() {
     try {
       const data = await listTransactionCandidatesForDebt(debtId, {});
       setTxCandidates(Array.isArray(data) ? data : []);
-    } catch(e) {
-      toast.error(getApiErrorMessage("خطا در دریافت گزینه‌های تراکنش"));
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "خطا در دریافت گزینه‌های تراکنش"));
       setTxCandidates([]);
     } finally {
       setCandidatesLoading(false);
@@ -200,15 +164,10 @@ export default function DebtAllocationsPage() {
   const selectedTx = transactionId ? txMap[Number(transactionId)] : null;
 
   async function handleCreate() {
-    if (!transactionId) {
-      toast.error("لطفاً تراکنش را انتخاب کنید");
-      return;
-    }
+    if (!transactionId) return toast.error("لطفاً تراکنش را انتخاب کنید");
+
     const v = Number(amount || 0);
-    if (!v || v <= 0) {
-      toast.error("مبلغ نامعتبر است");
-      return;
-    }
+    if (!v || v <= 0) return toast.error("مبلغ نامعتبر است");
 
     try {
       await createAllocation(debtId, {
@@ -247,16 +206,10 @@ export default function DebtAllocationsPage() {
 
   async function handleUpdate() {
     if (!editing?.id) return;
+    if (!editTransactionId) return toast.error("لطفاً تراکنش را انتخاب کنید");
 
-    if (!editTransactionId) {
-      toast.error("لطفاً تراکنش را انتخاب کنید");
-      return;
-    }
     const v = Number(editAmount || 0);
-    if (!v || v <= 0) {
-      toast.error("مبلغ نامعتبر است");
-      return;
-    }
+    if (!v || v <= 0) return toast.error("مبلغ نامعتبر است");
 
     try {
       await updateAllocation(debtId, editing.id, {
@@ -283,8 +236,8 @@ export default function DebtAllocationsPage() {
       await loadHeader();
       await loadAllocations();
       await loadCandidates();
-    } catch(e) {
-      toast.error(getApiErrorMessage("حذف ممکن نیست"));
+    } catch (e) {
+      toast.error(getApiErrorMessage(e, "حذف ممکن نیست"));
     }
   }
 
@@ -294,41 +247,17 @@ export default function DebtAllocationsPage() {
       <div className="rounded-2xl border bg-white p-3">
         <div className="flex items-center justify-between">
           <div className="font-bold text-lg">تخصیص‌ها (Debt #{debtId})</div>
-          <Button variant="secondary" onClick={() => window.history.back()}>
+
+          <Button variant="secondary" onClick={handleBack}>
             بازگشت
           </Button>
         </div>
 
-        {loadingHeader || lookupsLoading ? (
+        {loadingHeader ? (
           <div className="text-sm text-zinc-500 mt-2">در حال بارگذاری...</div>
         ) : debtView?.header ? (
           <div className="mt-3 space-y-2">
             <div className="grid grid-cols-1 gap-2 rounded-xl bg-zinc-50 p-3 text-sm md:grid-cols-2">
-              <div>
-                <span className="text-zinc-600">پروژه:</span>{" "}
-                <b>
-                  {projectsMap[debtView.header.projectId] ||
-                    (debtView.header.projectId ? `#${debtView.header.projectId}` : "-")}
-                </b>
-              </div>
-              <div>
-                <span className="text-zinc-600">شخص/سازمان:</span>{" "}
-                <b>
-                  {personsMap[debtView.header.personId] ||
-                    (debtView.header.personId ? `#${debtView.header.personId}` : "-")}
-                </b>
-              </div>
-              <div>
-                <span className="text-zinc-600">سررسید:</span> <b>{debtView.header.dateDue || "-"}</b>
-              </div>
-              <div>
-                <span className="text-zinc-600">ثبت:</span> <b>{dateFa(debtView.header.dateRegistered)}</b>
-              </div>
-
-              <div className="md:col-span-2">
-                <span className="text-zinc-600">توضیحات:</span> <b>{debtView.header.dsc || "-"}</b>
-              </div>
-
               <div className="md:col-span-2 border-t pt-2">
                 <span className="text-zinc-600">جمع:</span> <b>{moneyFa(debtView.totalAmount)}</b>{" "}
                 <span className="text-zinc-400">|</span>{" "}
@@ -398,6 +327,7 @@ export default function DebtAllocationsPage() {
                   <th className="py-2 text-right">عملیات</th>
                 </tr>
               </thead>
+
               <tbody>
                 {rows.map((r) => {
                   const tx = txMap[r.transactionId];
@@ -410,9 +340,6 @@ export default function DebtAllocationsPage() {
                       <td className="py-2">{r.dsc || "-"}</td>
                       <td className="py-2">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => navigate(`/transactions/${r.transactionId}/allocations`)}>
-                            مشاهده تراکنش
-                          </Button>
                           <Button variant="secondary" onClick={() => openEdit(r)}>
                             ویرایش
                           </Button>
@@ -488,15 +415,14 @@ export default function DebtAllocationsPage() {
                 پاک
               </Button>
             </div>
-            {selectedEditTx ? (
-              <div className="text-xs text-zinc-600 mt-1">
-                مانده: <b>{moneyFa(selectedEditTx.remainingAmount)}</b> | قابل‌ویرایش:{" "}
-                <b>{moneyFa(selectedEditTx.editableRemainingAmount)}</b>
-              </div>
-            ) : null}
           </div>
 
-          <Input label="مبلغ تخصیص" type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} />
+          <Input
+            label="مبلغ تخصیص"
+            type="number"
+            value={editAmount}
+            onChange={(e) => setEditAmount(e.target.value)}
+          />
           <Input label="توضیحات" value={editDsc} onChange={(e) => setEditDsc(e.target.value)} placeholder="اختیاری" />
         </div>
       </Modal>

@@ -114,12 +114,34 @@ export default function TransactionAllocationsPage() {
 
   const debtLookupColumns = useMemo(
     () => [
-      { key: "personTitle", title: "شخص/سازمان", render: (r) => <span className="font-semibold">{r.personTitle || "-"}</span> },
-      { key: "dateRegistered", title: "ثبت", render: (r) => dateFa(r.dateRegistered) },
+      {
+        key: "personTitle",
+        title: "شخص/سازمان",
+        render: (r) => <span className="font-semibold">{r.personTitle || "-"}</span>,
+      },
+
+      // ✅ CHANGED: Registered Date -> Due Date
+      {
+        key: "dateDue",
+        title: "سررسید",
+        render: (r) => {
+          const v = r.dateDue ?? r.dueDate ?? r.debtDateDue ?? r.headerDateDue;
+          // اگر تاریخ فقط yyyy-mm-dd بود هم درست نمایش می‌ده
+          return v ? String(v).substring(0, 10) : "-";
+        },
+      },
+
       { key: "totalAmount", title: "جمع", render: (r) => moneyFa(r.totalAmount) },
       { key: "allocatedAmount", title: "تخصیص", render: (r) => moneyFa(r.allocatedAmount) },
       { key: "remainingAmount", title: "مانده", render: (r) => moneyFa(r.remainingAmount) },
       { key: "editableRemainingAmount", title: "قابل‌ویرایش", render: (r) => moneyFa(r.editableRemainingAmount) },
+
+      // ✅ ADDED: Description
+      {
+        key: "dsc",
+        title: "توضیحات",
+        render: (r) => r.dsc ?? r.description ?? "-",
+      },
     ],
     []
   );
@@ -164,8 +186,8 @@ export default function TransactionAllocationsPage() {
     try {
       const t = await getTransactionById(transactionId);
       setTx(t);
-    } catch(e) {
-      toast.error(e,"خطا در دریافت اطلاعات تراکنش");
+    } catch (e) {
+      toast.error(e, "خطا در دریافت اطلاعات تراکنش");
       setTx(null);
     } finally {
       setLoadingHeader(false);
@@ -178,8 +200,8 @@ export default function TransactionAllocationsPage() {
     try {
       const data = await listAllocationsByTransaction(transactionId);
       setRows(Array.isArray(data) ? data : []);
-    } catch(e) {
-      toast.error(e,"خطا در دریافت تخصیص‌ها");
+    } catch (e) {
+      toast.error(e, "خطا در دریافت تخصیص‌ها");
       setRows([]);
     } finally {
       setLoading(false);
@@ -192,8 +214,8 @@ export default function TransactionAllocationsPage() {
     try {
       const data = await listDebtCandidatesForTransaction(transactionId, {});
       setDebtCandidates(Array.isArray(data) ? data : []);
-    } catch(e) {
-      toast.error(e,"خطا در دریافت گزینه‌های بدهی");
+    } catch (e) {
+      toast.error(e, "خطا در دریافت گزینه‌های بدهی");
       setDebtCandidates([]);
     } finally {
       setCandidatesLoading(false);
@@ -292,8 +314,8 @@ export default function TransactionAllocationsPage() {
       await loadHeader();
       await loadAllocations();
       await loadCandidates();
-    } catch(e) {
-      toast.error(e,"حذف ممکن نیست");
+    } catch (e) {
+      toast.error(e, "حذف ممکن نیست");
     }
   }
 
@@ -449,7 +471,8 @@ export default function TransactionAllocationsPage() {
         rows={debtCandidates}
         columns={debtLookupColumns}
         searchPlaceholder="جستجو..."
-        searchKeys={["personTitle"]}
+        // ✅ include description too
+        searchKeys={["personTitle", "dsc", "description"]}
         onSelect={(d) => setDebtId(d.id)}
         onClose={() => setDebtLookupOpen(false)}
       />
@@ -514,7 +537,8 @@ export default function TransactionAllocationsPage() {
         rows={editDebtCandidates}
         columns={debtLookupColumns}
         searchPlaceholder="جستجو..."
-        searchKeys={["personTitle"]}
+        // ✅ include description too
+        searchKeys={["personTitle", "dsc", "description"]}
         onSelect={(d) => setEditDebtId(d.id)}
         onClose={() => setEditDebtLookupOpen(false)}
       />

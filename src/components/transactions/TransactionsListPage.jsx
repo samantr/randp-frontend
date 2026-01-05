@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import Button from "../common/Button";
-import DataTable from "../table/DataTable";
 import Pagination from "../table/Pagination";
 import ConfirmDialog from "../common/ConfirmDialog";
 import toast from "react-hot-toast";
@@ -58,7 +57,73 @@ function toDateSortable(v) {
   return Number.isFinite(t) ? t : 0;
 }
 
-/** ✅ IMPORTANT: move these OUTSIDE so input won't lose focus */
+const EMPTY_CF = {
+  code: "",
+  project: "",
+  from: "",
+  to: "",
+  dateDue: "",
+  amountPaid: "",
+  allocatedAmount: "",
+  remainingAmount: "",
+  paymentType: "",
+  transactionType: "",
+  dsc: "",
+};
+
+const CF_KEYS = Object.keys(EMPTY_CF);
+
+function parseIntSafe(v, fallback = 0) {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+function parseStateFromSearchParams(sp) {
+  const page = parseIntSafe(sp.get("page"), 0);
+
+  const sortKey = sp.get("sortKey");
+  const sortDir = sp.get("sortDir");
+  const sort =
+    sortKey && (sortDir === "asc" || sortDir === "desc")
+      ? { key: sortKey, dir: sortDir }
+      : { key: null, dir: null };
+
+  const cf = { ...EMPTY_CF };
+  for (const k of CF_KEYS) {
+    const v = sp.get(`cf_${k}`);
+    cf[k] = v ?? "";
+  }
+
+  return { page, sort, cf };
+}
+
+function buildSearchParamsObject({ page, sort, cf }) {
+  const params = {};
+
+  // keep page always, so browser back returns exact page
+  params.page = String(page ?? 0);
+
+  if (sort?.key && sort?.dir) {
+    params.sortKey = sort.key;
+    params.sortDir = sort.dir;
+  }
+
+  for (const k of CF_KEYS) {
+    const v = cf?.[k];
+    if (v != null && String(v).trim() !== "") {
+      params[`cf_${k}`] = String(v);
+    }
+  }
+
+  return params;
+}
+
+function stableSerializeParamsObject(obj) {
+  const keys = Object.keys(obj).sort();
+  return keys.map((k) => `${k}=${obj[k]}`).join("&");
+}
+
+/** ✅ keep outside so input won't lose focus */
 const HeaderFilterInput = React.memo(function HeaderFilterInput({
   value,
   onChange,
@@ -66,7 +131,7 @@ const HeaderFilterInput = React.memo(function HeaderFilterInput({
 }) {
   return (
     <input
-      className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs"
+      className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs bg-white"
       placeholder={placeholder}
       value={value || ""}
       onChange={onChange}
@@ -94,8 +159,16 @@ const SortableHeader = React.memo(function SortableHeader({
 
 export default function TransactionsListPage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  const [page, setPage] = useState(0);
+  // --- URL <-> STATE sync guards
+  const lastAppliedUrlRef = useRef(""); // last url-serialized params we applied to state
+  const lastPushedStateRef = useRef(""); // last state-serialized params we pushed to url
+
+  // init state from URL once
+  const initial = useMemo(() => parseStateFromSearchParams(searchParams), []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const [page, setPage] = useState(initial.page);
   const [size] = useState(20);
 
   const [loading, setLoading] = useState(false);
@@ -110,28 +183,49 @@ export default function TransactionsListPage() {
   const [editLoading, setEditLoading] = useState(false);
 
   // per-column filters
-  const [cf, setCf] = useState({
-    id: "",
-    code: "",
-    project: "",
-    from: "",
-    to: "",
-    dateDue: "",
-    amountPaid: "",
-    allocatedAmount: "",
-    remainingAmount: "",
-    paymentType: "",
-    transactionType: "",
-    dateRegistered: "",
-    dsc: "",
-  });
+  const [cf, setCf] = useState(initial.cf);
 
   // sorting
-  const [sort, setSort] = useState({ key: null, dir: null });
+  const [sort, setSort] = useState(initial.sort);
 
   // lookup caches
   const [personsMap, setPersonsMap] = useState({});
   const [projectsMap, setProjectsMap] = useState({});
+
+  // 1) URL -> STATE (handles browser back/forward or manual URL edits)
+  useEffect(() => {
+    const parsed = parseStateFromSearchParams(searchParams);
+    const nextObj = buildSearchParamsObject(parsed);
+    const nextSig = stableSerializeParamsObject(nextObj);
+
+    // avoid re-applying same URL state
+    if (nextSig === lastAppliedUrlRef.current) return;
+    lastAppliedUrlRef.current = nextSig;
+
+    setPage(parsed.page);
+    setSort(parsed.sort);
+    setCf(parsed.cf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
+  // 2) STATE -> URL (keeps it preserved when navigating away and coming back)
+  useEffect(() => {
+    const obj = buildSearchParamsObject({ page, sort, cf });
+    const sig = stableSerializeParamsObject(obj);
+
+    // avoid pushing same state repeatedly
+    if (sig === lastPushedStateRef.current) return;
+    lastPushedStateRef.current = sig;
+
+    // if URL already matches, do nothing
+    const currentObj = {};
+    for (const [k, v] of searchParams.entries()) currentObj[k] = v;
+    const currentSig = stableSerializeParamsObject(currentObj);
+
+    if (sig === currentSig) return;
+
+    setSearchParams(obj, { replace: true });
+  }, [page, sort, cf, setSearchParams, searchParams]);
 
   const loadLookups = useCallback(async () => {
     try {
@@ -144,8 +238,7 @@ export default function TransactionsListPage() {
 
     try {
       const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
-      const projects =
-        normalizePageLike(projectsRes).content || projectsRes || [];
+      const projects = normalizePageLike(projectsRes).content || projectsRes || [];
       const pr = {};
       for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
       setProjectsMap(pr);
@@ -178,7 +271,6 @@ export default function TransactionsListPage() {
       if (!alive) return;
       await load();
     }, 150);
-
     return () => {
       alive = false;
       clearTimeout(t);
@@ -189,7 +281,6 @@ export default function TransactionsListPage() {
     (r, key) => {
       if (!r) return "";
 
-      if (key === "id") return r.id ?? "";
       if (key === "code") return r.code ?? "";
 
       if (key === "project") {
@@ -214,18 +305,11 @@ export default function TransactionsListPage() {
       if (key === "remainingAmount") return r.remainingAmount ?? "";
 
       if (key === "paymentType") return paymentTypeLabel(r.paymentType);
-      if (key === "transactionType")
-        return transactionTypeLabel(r.transactionType);
-
-      if (key === "dateRegistered") {
-        return r.dateRegistered
-          ? r.dateRegistered.replace("T", " ").substring(0, 16)
-          : "-";
-      }
+      if (key === "transactionType") return transactionTypeLabel(r.transactionType);
 
       if (key === "dsc") return r.dsc || "-";
 
-      return "";
+      return r[key] ?? "";
     },
     [personsMap, projectsMap]
   );
@@ -240,14 +324,10 @@ export default function TransactionsListPage() {
 
         const val = rowValue(r, k);
 
-        if (
-          k === "amountPaid" ||
-          k === "allocatedAmount" ||
-          k === "remainingAmount" ||
-          k === "id"
-        ) {
+        if (k === "amountPaid" || k === "allocatedAmount" || k === "remainingAmount") {
           const v = normalizeText(String(val ?? ""));
-          if (!v.includes(needle)) return false;
+          const vFa = normalizeText(moneyFa(val));
+          if (!v.includes(needle) && !vFa.includes(needle)) return false;
           continue;
         }
 
@@ -263,27 +343,11 @@ export default function TransactionsListPage() {
     const key = sort.key;
 
     return [...filtered].sort((a, b) => {
-      if (key === "id") return dirMul * (Number(a.id || 0) - Number(b.id || 0));
-      if (key === "amountPaid")
-        return dirMul * (Number(a.amountPaid || 0) - Number(b.amountPaid || 0));
-      if (key === "allocatedAmount")
-        return (
-          dirMul *
-          (Number(a.allocatedAmount || 0) - Number(b.allocatedAmount || 0))
-        );
-      if (key === "remainingAmount")
-        return (
-          dirMul *
-          (Number(a.remainingAmount || 0) - Number(b.remainingAmount || 0))
-        );
+      if (key === "amountPaid") return dirMul * (Number(a.amountPaid || 0) - Number(b.amountPaid || 0));
+      if (key === "allocatedAmount") return dirMul * (Number(a.allocatedAmount || 0) - Number(b.allocatedAmount || 0));
+      if (key === "remainingAmount") return dirMul * (Number(a.remainingAmount || 0) - Number(b.remainingAmount || 0));
 
-      if (key === "dateDue")
-        return dirMul * (toDateSortable(a.dateDue) - toDateSortable(b.dateDue));
-      if (key === "dateRegistered")
-        return (
-          dirMul *
-          (toDateSortable(a.dateRegistered) - toDateSortable(b.dateRegistered))
-        );
+      if (key === "dateDue") return dirMul * (toDateSortable(a.dateDue) - toDateSortable(b.dateDue));
 
       const va = normalizeText(rowValue(a, key));
       const vb = normalizeText(rowValue(b, key));
@@ -305,89 +369,6 @@ export default function TransactionsListPage() {
     if (sort.key !== key || !sort.dir) return "⇅";
     return sort.dir === "asc" ? "↑" : "↓";
   }
-
-  const columns = useMemo(
-    () => [
-      // { key: "id", title: "ID", render: (r) => r.id },
-      { key: "code", title: "کد", render: (r) => <b>{r.code || "-"}</b> },
-      { key: "project", title: "پروژه", render: (r) => rowValue(r, "project") },
-      { key: "from", title: "از", render: (r) => rowValue(r, "from") },
-      { key: "to", title: "به", render: (r) => rowValue(r, "to") },
-      { key: "dateDue", title: "سررسید", render: (r) => rowValue(r, "dateDue") },
-      {
-        key: "amountPaid",
-        title: "مبلغ",
-        render: (r) => (r.amountPaid != null ? moneyFa(r.amountPaid) : "-"),
-      },
-      {
-        key: "allocatedAmount",
-        title: "تخصیص",
-        render: (r) => (r.allocatedAmount != null ? moneyFa(r.allocatedAmount) : "-"),
-      },
-      {
-        key: "remainingAmount",
-        title: "مانده",
-        render: (r) => (r.remainingAmount != null ? moneyFa(r.remainingAmount) : "-"),
-      },
-      {
-        key: "paymentType",
-        title: "نوع پرداخت",
-        render: (r) => (
-          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">
-            {paymentTypeLabel(r.paymentType)}
-          </span>
-        ),
-      },
-      {
-        key: "transactionType",
-        title: "نوع تراکنش",
-        render: (r) => (
-          <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">
-            {transactionTypeLabel(r.transactionType)}
-          </span>
-        ),
-      },
-      //{ key: "dateRegistered", title: "ثبت", render: (r) => rowValue(r, "dateRegistered") },
-      { key: "dsc", title: "توضیحات", render: (r) => r.dsc || "-" },
-      {
-        key: "actions",
-        title: "عملیات",
-        render: (r) => (
-          <div className="flex gap-2">
-            <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/allocations`)}>
-              تخصیص‌ها
-            </Button>
-            <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/documents`)}>
-              پیوست‌ها
-            </Button>
-            <Button
-              variant="secondary"
-              onClick={async () => {
-                try {
-                  setEditLoading(true);
-                  setEditing(null);
-                  setEditOpen(true);
-                  const fresh = await getTransactionById(r.id);
-                  setEditing(fresh);
-                } catch (e) {
-                  toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات تراکنش"));
-                  setEditOpen(false);
-                } finally {
-                  setEditLoading(false);
-                }
-              }}
-            >
-              ویرایش
-            </Button>
-            <Button variant="danger" onClick={() => setDeleteId(r.id)}>
-              حذف
-            </Button>
-          </div>
-        ),
-      },
-    ],
-    [navigate, rowValue]
-  );
 
   async function handleDelete() {
     try {
@@ -413,112 +394,127 @@ export default function TransactionsListPage() {
       </div>
 
       <div className="mb-3 rounded-2xl border bg-white p-3 overflow-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
           <thead className="text-zinc-600">
+            {/* HEADER */}
             <tr className="border-b">
-              {/* <th className="py-2 text-right">
-                <SortableHeader title="ID" icon={sortIcon("id")} onClick={() => toggleSort("id")} />
-              </th> */}
-              <th className="py-2 text-right">
+              <th className="py-2 text-right w-12">#</th>
+
+              <th className="py-2 text-right w-28">
                 <SortableHeader title="کد" icon={sortIcon("code")} onClick={() => toggleSort("code")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-44">
                 <SortableHeader title="پروژه" icon={sortIcon("project")} onClick={() => toggleSort("project")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-40">
                 <SortableHeader title="از" icon={sortIcon("from")} onClick={() => toggleSort("from")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-40">
                 <SortableHeader title="به" icon={sortIcon("to")} onClick={() => toggleSort("to")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-28">
                 <SortableHeader title="سررسید" icon={sortIcon("dateDue")} onClick={() => toggleSort("dateDue")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-28">
                 <SortableHeader title="مبلغ" icon={sortIcon("amountPaid")} onClick={() => toggleSort("amountPaid")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-28">
                 <SortableHeader title="تخصیص" icon={sortIcon("allocatedAmount")} onClick={() => toggleSort("allocatedAmount")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-28">
                 <SortableHeader title="مانده" icon={sortIcon("remainingAmount")} onClick={() => toggleSort("remainingAmount")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-28">
                 <SortableHeader title="نوع پرداخت" icon={sortIcon("paymentType")} onClick={() => toggleSort("paymentType")} />
               </th>
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-28">
                 <SortableHeader title="نوع تراکنش" icon={sortIcon("transactionType")} onClick={() => toggleSort("transactionType")} />
               </th>
-              {/* <th className="py-2 text-right">
-                <SortableHeader title="ثبت" icon={sortIcon("dateRegistered")} onClick={() => toggleSort("dateRegistered")} />
-              </th> */}
-              <th className="py-2 text-right">
+
+              <th className="py-2 text-right w-56">
                 <SortableHeader title="توضیحات" icon={sortIcon("dsc")} onClick={() => toggleSort("dsc")} />
               </th>
-              <th className="py-2 text-right">عملیات</th>
+
+              <th className="py-2 text-right w-72">عملیات</th>
             </tr>
 
+            {/* FILTERS (aligned under headers) */}
             <tr className="border-b bg-zinc-50">
-              {/* <th className="py-2">
-                <HeaderFilterInput value={cf.id} onChange={(e) => setCf((p) => ({ ...p, id: e.target.value }))} />
-              </th> */}
+              <th className="py-2" />
+
               <th className="py-2">
                 <HeaderFilterInput value={cf.code} onChange={(e) => setCf((p) => ({ ...p, code: e.target.value }))} />
               </th>
+
               <th className="py-2">
                 <HeaderFilterInput value={cf.project} onChange={(e) => setCf((p) => ({ ...p, project: e.target.value }))} />
               </th>
+
               <th className="py-2">
                 <HeaderFilterInput value={cf.from} onChange={(e) => setCf((p) => ({ ...p, from: e.target.value }))} />
               </th>
+
               <th className="py-2">
                 <HeaderFilterInput value={cf.to} onChange={(e) => setCf((p) => ({ ...p, to: e.target.value }))} />
               </th>
+
               <th className="py-2">
                 <HeaderFilterInput value={cf.dateDue} onChange={(e) => setCf((p) => ({ ...p, dateDue: e.target.value }))} />
               </th>
+
               <th className="py-2">
                 <HeaderFilterInput value={cf.amountPaid} onChange={(e) => setCf((p) => ({ ...p, amountPaid: e.target.value }))} />
               </th>
+
               <th className="py-2">
-                <HeaderFilterInput value={cf.allocatedAmount} onChange={(e) => setCf((p) => ({ ...p, allocatedAmount: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.allocatedAmount}
+                  onChange={(e) => setCf((p) => ({ ...p, allocatedAmount: e.target.value }))}
+                />
               </th>
+
               <th className="py-2">
-                <HeaderFilterInput value={cf.remainingAmount} onChange={(e) => setCf((p) => ({ ...p, remainingAmount: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.remainingAmount}
+                  onChange={(e) => setCf((p) => ({ ...p, remainingAmount: e.target.value }))}
+                />
               </th>
+
               <th className="py-2">
-                <HeaderFilterInput value={cf.paymentType} onChange={(e) => setCf((p) => ({ ...p, paymentType: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.paymentType}
+                  onChange={(e) => setCf((p) => ({ ...p, paymentType: e.target.value }))}
+                />
               </th>
+
               <th className="py-2">
-                <HeaderFilterInput value={cf.transactionType} onChange={(e) => setCf((p) => ({ ...p, transactionType: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.transactionType}
+                  onChange={(e) => setCf((p) => ({ ...p, transactionType: e.target.value }))}
+                />
               </th>
-              {/* <th className="py-2">
-                <HeaderFilterInput value={cf.dateRegistered} onChange={(e) => setCf((p) => ({ ...p, dateRegistered: e.target.value }))} />
-              </th> */}
+
               <th className="py-2">
                 <HeaderFilterInput value={cf.dsc} onChange={(e) => setCf((p) => ({ ...p, dsc: e.target.value }))} />
               </th>
+
               <th className="py-2">
                 <button
                   type="button"
-                  className="rounded-lg border border-zinc-200 px-2 py-1 text-xs hover:bg-white"
+                  className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs hover:bg-white"
                   onClick={() => {
-                    setCf({
-                      id: "",
-                      code: "",
-                      project: "",
-                      from: "",
-                      to: "",
-                      dateDue: "",
-                      amountPaid: "",
-                      allocatedAmount: "",
-                      remainingAmount: "",
-                      paymentType: "",
-                      transactionType: "",
-                      dateRegistered: "",
-                      dsc: "",
-                    });
+                    setCf({ ...EMPTY_CF });
                     setSort({ key: null, dir: null });
+                    // optional: setPage(0);  // uncomment if you want clear to jump to first page
                   }}
                 >
                   پاک‌کردن
@@ -526,11 +522,92 @@ export default function TransactionsListPage() {
               </th>
             </tr>
           </thead>
-        </table>
 
-        <div className="mt-3">
-          <DataTable columns={columns} rows={filteredSortedRows} loading={loading} />
-        </div>
+          <tbody>
+            {loading ? (
+              <tr>
+                <td colSpan={13} className="py-4 text-center text-zinc-500">
+                  در حال بارگذاری...
+                </td>
+              </tr>
+            ) : filteredSortedRows.length === 0 ? (
+              <tr>
+                <td colSpan={13} className="py-4 text-center text-zinc-500">
+                  موردی یافت نشد.
+                </td>
+              </tr>
+            ) : (
+              filteredSortedRows.map((r, idx) => {
+                const rowNo = page * size + idx + 1;
+                return (
+                  <tr key={r.id} className="border-b last:border-b-0">
+                    <td className="py-2 text-zinc-500">{rowNo}</td>
+
+                    <td className="py-2 font-semibold truncate">{r.code || "-"}</td>
+                    <td className="py-2 truncate">{rowValue(r, "project")}</td>
+                    <td className="py-2 truncate">{rowValue(r, "from")}</td>
+                    <td className="py-2 truncate">{rowValue(r, "to")}</td>
+                    <td className="py-2">{rowValue(r, "dateDue")}</td>
+
+                    <td className="py-2 font-semibold">{r.amountPaid != null ? moneyFa(r.amountPaid) : "-"}</td>
+                    <td className="py-2 font-semibold">{r.allocatedAmount != null ? moneyFa(r.allocatedAmount) : "-"}</td>
+                    <td className="py-2 font-semibold">{r.remainingAmount != null ? moneyFa(r.remainingAmount) : "-"}</td>
+
+                    <td className="py-2">
+                      <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">
+                        {paymentTypeLabel(r.paymentType)}
+                      </span>
+                    </td>
+
+                    <td className="py-2">
+                      <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">
+                        {transactionTypeLabel(r.transactionType)}
+                      </span>
+                    </td>
+
+                    <td className="py-2 truncate">{r.dsc || "-"}</td>
+
+                    <td className="py-2">
+                      <div className="flex gap-2">
+                        <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/allocations`)}>
+                          تخصیص‌ها
+                        </Button>
+
+                        <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/documents`)}>
+                          پیوست‌ها
+                        </Button>
+
+                        <Button
+                          variant="secondary"
+                          onClick={async () => {
+                            try {
+                              setEditLoading(true);
+                              setEditing(null);
+                              setEditOpen(true);
+                              const fresh = await getTransactionById(r.id);
+                              setEditing(fresh);
+                            } catch (e) {
+                              toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات تراکنش"));
+                              setEditOpen(false);
+                            } finally {
+                              setEditLoading(false);
+                            }
+                          }}
+                        >
+                          ویرایش
+                        </Button>
+
+                        <Button variant="danger" onClick={() => setDeleteId(r.id)}>
+                          حذف
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
       </div>
 
       <Pagination page={page} totalPages={data.totalPages || 0} onPage={setPage} />
