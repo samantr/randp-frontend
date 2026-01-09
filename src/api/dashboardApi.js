@@ -30,7 +30,6 @@ export async function getTopReceivers({ from, to, limit = 10 }) {
   return res.data;
 }
 
-/* ====== NEW: layer A / layer B ====== */
 export async function getPersonsSummary({ from, to, limit = 50 }) {
   const res = await api.get("/api/v1/dashboard/persons-summary", { params: { from, to, limit } });
   return res.data;
@@ -38,6 +37,40 @@ export async function getPersonsSummary({ from, to, limit = 50 }) {
 
 export async function getPersonPayables({ personId, from, to, limit = 50 }) {
   const res = await api.get(`/api/v1/dashboard/persons/${personId}/payables`, {
+    params: { from, to, limit },
+  });
+  return res.data;
+}
+
+/* ====== DRILLS ====== */
+export async function getProjectsSummary({ from, to, limit = 50 }) {
+  const res = await api.get("/api/v1/dashboard/projects-summary", { params: { from, to, limit } });
+  return res.data;
+}
+
+export async function getProjectCategories({ projectId, from, to, limit = 30 }) {
+  const res = await api.get(`/api/v1/dashboard/projects/${projectId}/categories`, {
+    params: { from, to, limit },
+  });
+  return res.data;
+}
+
+export async function getProjectItems({ projectId, itemCategoryId, from, to, limit = 50 }) {
+  const res = await api.get(`/api/v1/dashboard/projects/${projectId}/items`, {
+    params: { from, to, limit, itemCategoryId: itemCategoryId ?? undefined },
+  });
+  return res.data;
+}
+
+export async function getItemCategoriesSummary({ from, to, limit = 50 }) {
+  const res = await api.get("/api/v1/dashboard/item-categories-summary", {
+    params: { from, to, limit },
+  });
+  return res.data;
+}
+
+export async function getItemsByCategory({ itemCategoryId, from, to, limit = 50 }) {
+  const res = await api.get(`/api/v1/dashboard/item-categories/${itemCategoryId}/items`, {
     params: { from, to, limit },
   });
   return res.data;

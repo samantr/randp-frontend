@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import Button from "../common/Button";
 import Pagination from "../table/Pagination";
@@ -49,7 +55,9 @@ function moneyFa(v) {
 }
 
 function normalizeText(v) {
-  return String(v ?? "").trim().toLowerCase();
+  return String(v ?? "")
+    .trim()
+    .toLowerCase();
 }
 
 function toDateSortable(v) {
@@ -81,12 +89,14 @@ function parseIntSafe(v, fallback = 0) {
 function parseStateFromSearchParams(sp) {
   const page = parseIntSafe(sp.get("page"), 0);
 
-  const sortKey = sp.get("sortKey");
-  const sortDir = sp.get("sortDir");
-  const sort =
-    sortKey && (sortDir === "asc" || sortDir === "desc")
-      ? { key: sortKey, dir: sortDir }
-      : { key: null, dir: null };
+const sortKey = sp.get("sortKey");
+const sortDir = sp.get("sortDir");
+
+const sort =
+  sortKey && (sortDir === "asc" || sortDir === "desc")
+    ? { key: sortKey, dir: sortDir }
+    : { key: "dateRegistered", dir: "desc" };
+
 
   const cf = { ...EMPTY_CF };
   for (const k of CF_KEYS) {
@@ -238,7 +248,8 @@ export default function TransactionsListPage() {
 
     try {
       const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
-      const projects = normalizePageLike(projectsRes).content || projectsRes || [];
+      const projects =
+        normalizePageLike(projectsRes).content || projectsRes || [];
       const pr = {};
       for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
       setProjectsMap(pr);
@@ -305,9 +316,12 @@ export default function TransactionsListPage() {
       if (key === "remainingAmount") return r.remainingAmount ?? "";
 
       if (key === "paymentType") return paymentTypeLabel(r.paymentType);
-      if (key === "transactionType") return transactionTypeLabel(r.transactionType);
+      if (key === "transactionType")
+        return transactionTypeLabel(r.transactionType);
 
       if (key === "dsc") return r.dsc || "-";
+
+      if (key === "dateRegistered") return r.dateRegistered || "";
 
       return r[key] ?? "";
     },
@@ -324,7 +338,11 @@ export default function TransactionsListPage() {
 
         const val = rowValue(r, k);
 
-        if (k === "amountPaid" || k === "allocatedAmount" || k === "remainingAmount") {
+        if (
+          k === "amountPaid" ||
+          k === "allocatedAmount" ||
+          k === "remainingAmount"
+        ) {
           const v = normalizeText(String(val ?? ""));
           const vFa = normalizeText(moneyFa(val));
           if (!v.includes(needle) && !vFa.includes(needle)) return false;
@@ -343,12 +361,28 @@ export default function TransactionsListPage() {
     const key = sort.key;
 
     return [...filtered].sort((a, b) => {
-      if (key === "amountPaid") return dirMul * (Number(a.amountPaid || 0) - Number(b.amountPaid || 0));
-      if (key === "allocatedAmount") return dirMul * (Number(a.allocatedAmount || 0) - Number(b.allocatedAmount || 0));
-      if (key === "remainingAmount") return dirMul * (Number(a.remainingAmount || 0) - Number(b.remainingAmount || 0));
+      if (key === "amountPaid")
+        return dirMul * (Number(a.amountPaid || 0) - Number(b.amountPaid || 0));
+      if (key === "allocatedAmount")
+        return (
+          dirMul *
+          (Number(a.allocatedAmount || 0) - Number(b.allocatedAmount || 0))
+        );
+      if (key === "remainingAmount")
+        return (
+          dirMul *
+          (Number(a.remainingAmount || 0) - Number(b.remainingAmount || 0))
+        );
 
-      if (key === "dateDue") return dirMul * (toDateSortable(a.dateDue) - toDateSortable(b.dateDue));
+      if (key === "dateDue")
+        return dirMul * (toDateSortable(a.dateDue) - toDateSortable(b.dateDue));
 
+      if (key === "dateRegistered")
+  return (
+    dirMul *
+    (toDateSortable(a.dateRegistered) -
+      toDateSortable(b.dateRegistered))
+  );
       const va = normalizeText(rowValue(a, key));
       const vb = normalizeText(rowValue(b, key));
       if (va < vb) return -1 * dirMul;
@@ -394,57 +428,103 @@ export default function TransactionsListPage() {
       </div>
 
       <div className="mb-3 rounded-2xl border bg-white p-3 overflow-auto">
-        <table className="w-full text-sm table-fixed">
+        <table className="w-full text-sm ">
           <thead className="text-zinc-600">
             {/* HEADER */}
             <tr className="border-b">
               <th className="py-2 text-right w-12">#</th>
 
               <th className="py-2 text-right w-28">
-                <SortableHeader title="کد" icon={sortIcon("code")} onClick={() => toggleSort("code")} />
+                <SortableHeader
+                  title="کد"
+                  icon={sortIcon("code")}
+                  onClick={() => toggleSort("code")}
+                />
               </th>
 
               <th className="py-2 text-right w-44">
-                <SortableHeader title="پروژه" icon={sortIcon("project")} onClick={() => toggleSort("project")} />
+                <SortableHeader
+                  title="پروژه"
+                  icon={sortIcon("project")}
+                  onClick={() => toggleSort("project")}
+                />
               </th>
 
               <th className="py-2 text-right w-40">
-                <SortableHeader title="از" icon={sortIcon("from")} onClick={() => toggleSort("from")} />
+                <SortableHeader
+                  title="از"
+                  icon={sortIcon("from")}
+                  onClick={() => toggleSort("from")}
+                />
               </th>
 
               <th className="py-2 text-right w-40">
-                <SortableHeader title="به" icon={sortIcon("to")} onClick={() => toggleSort("to")} />
+                <SortableHeader
+                  title="به"
+                  icon={sortIcon("to")}
+                  onClick={() => toggleSort("to")}
+                />
               </th>
 
               <th className="py-2 text-right w-28">
-                <SortableHeader title="سررسید" icon={sortIcon("dateDue")} onClick={() => toggleSort("dateDue")} />
+                <SortableHeader
+                  title="سررسید"
+                  icon={sortIcon("dateDue")}
+                  onClick={() => toggleSort("dateDue")}
+                />
               </th>
 
               <th className="py-2 text-right w-28">
-                <SortableHeader title="مبلغ" icon={sortIcon("amountPaid")} onClick={() => toggleSort("amountPaid")} />
+                <SortableHeader
+                  title="مبلغ"
+                  icon={sortIcon("amountPaid")}
+                  onClick={() => toggleSort("amountPaid")}
+                />
               </th>
 
               <th className="py-2 text-right w-28">
-                <SortableHeader title="تخصیص" icon={sortIcon("allocatedAmount")} onClick={() => toggleSort("allocatedAmount")} />
+                <SortableHeader
+                  title="تخصیص"
+                  icon={sortIcon("allocatedAmount")}
+                  onClick={() => toggleSort("allocatedAmount")}
+                />
               </th>
 
               <th className="py-2 text-right w-28">
-                <SortableHeader title="مانده" icon={sortIcon("remainingAmount")} onClick={() => toggleSort("remainingAmount")} />
+                <SortableHeader
+                  title="مانده"
+                  icon={sortIcon("remainingAmount")}
+                  onClick={() => toggleSort("remainingAmount")}
+                />
               </th>
 
               <th className="py-2 text-right w-28">
-                <SortableHeader title="نوع پرداخت" icon={sortIcon("paymentType")} onClick={() => toggleSort("paymentType")} />
+                <SortableHeader
+                  title="نوع پرداخت"
+                  icon={sortIcon("paymentType")}
+                  onClick={() => toggleSort("paymentType")}
+                />
               </th>
 
               <th className="py-2 text-right w-28">
-                <SortableHeader title="نوع تراکنش" icon={sortIcon("transactionType")} onClick={() => toggleSort("transactionType")} />
+                <SortableHeader
+                  title="نوع تراکنش"
+                  icon={sortIcon("transactionType")}
+                  onClick={() => toggleSort("transactionType")}
+                />
               </th>
 
               <th className="py-2 text-right w-56">
-                <SortableHeader title="توضیحات" icon={sortIcon("dsc")} onClick={() => toggleSort("dsc")} />
+                <SortableHeader
+                  title="توضیحات"
+                  icon={sortIcon("dsc")}
+                  onClick={() => toggleSort("dsc")}
+                />
               </th>
 
-              <th className="py-2 text-right w-72">عملیات</th>
+              <th className="py-2 text-right w-72 sticky right-0 z-20 bg-white">
+                عملیات
+              </th>
             </tr>
 
             {/* FILTERS (aligned under headers) */}
@@ -452,62 +532,103 @@ export default function TransactionsListPage() {
               <th className="py-2" />
 
               <th className="py-2">
-                <HeaderFilterInput value={cf.code} onChange={(e) => setCf((p) => ({ ...p, code: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.code}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, code: e.target.value }))
+                  }
+                />
               </th>
 
               <th className="py-2">
-                <HeaderFilterInput value={cf.project} onChange={(e) => setCf((p) => ({ ...p, project: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.project}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, project: e.target.value }))
+                  }
+                />
               </th>
 
               <th className="py-2">
-                <HeaderFilterInput value={cf.from} onChange={(e) => setCf((p) => ({ ...p, from: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.from}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, from: e.target.value }))
+                  }
+                />
               </th>
 
               <th className="py-2">
-                <HeaderFilterInput value={cf.to} onChange={(e) => setCf((p) => ({ ...p, to: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.to}
+                  onChange={(e) => setCf((p) => ({ ...p, to: e.target.value }))}
+                />
               </th>
 
               <th className="py-2">
-                <HeaderFilterInput value={cf.dateDue} onChange={(e) => setCf((p) => ({ ...p, dateDue: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.dateDue}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, dateDue: e.target.value }))
+                  }
+                />
               </th>
 
               <th className="py-2">
-                <HeaderFilterInput value={cf.amountPaid} onChange={(e) => setCf((p) => ({ ...p, amountPaid: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.amountPaid}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, amountPaid: e.target.value }))
+                  }
+                />
               </th>
 
               <th className="py-2">
                 <HeaderFilterInput
                   value={cf.allocatedAmount}
-                  onChange={(e) => setCf((p) => ({ ...p, allocatedAmount: e.target.value }))}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, allocatedAmount: e.target.value }))
+                  }
                 />
               </th>
 
               <th className="py-2">
                 <HeaderFilterInput
                   value={cf.remainingAmount}
-                  onChange={(e) => setCf((p) => ({ ...p, remainingAmount: e.target.value }))}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, remainingAmount: e.target.value }))
+                  }
                 />
               </th>
 
               <th className="py-2">
                 <HeaderFilterInput
                   value={cf.paymentType}
-                  onChange={(e) => setCf((p) => ({ ...p, paymentType: e.target.value }))}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, paymentType: e.target.value }))
+                  }
                 />
               </th>
 
               <th className="py-2">
                 <HeaderFilterInput
                   value={cf.transactionType}
-                  onChange={(e) => setCf((p) => ({ ...p, transactionType: e.target.value }))}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, transactionType: e.target.value }))
+                  }
                 />
               </th>
 
               <th className="py-2">
-                <HeaderFilterInput value={cf.dsc} onChange={(e) => setCf((p) => ({ ...p, dsc: e.target.value }))} />
+                <HeaderFilterInput
+                  value={cf.dsc}
+                  onChange={(e) =>
+                    setCf((p) => ({ ...p, dsc: e.target.value }))
+                  }
+                />
               </th>
 
-              <th className="py-2">
+              <th className="py-2 sticky right-0 z-20 bg-zinc-50">
                 <button
                   type="button"
                   className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs hover:bg-white"
@@ -543,15 +664,27 @@ export default function TransactionsListPage() {
                   <tr key={r.id} className="border-b last:border-b-0">
                     <td className="py-2 text-zinc-500">{rowNo}</td>
 
-                    <td className="py-2 font-semibold truncate">{r.code || "-"}</td>
-                    <td className="py-2 truncate">{rowValue(r, "project")}</td>
-                    <td className="py-2 truncate">{rowValue(r, "from")}</td>
-                    <td className="py-2 truncate">{rowValue(r, "to")}</td>
+                    <td className="py-2 font-semibold ">
+                      {r.code || "-"}
+                    </td>
+                    <td className="py-2 ">{rowValue(r, "project")}</td>
+                    <td className="py-2 ">{rowValue(r, "from")}</td>
+                    <td className="py-2 ">{rowValue(r, "to")}</td>
                     <td className="py-2">{rowValue(r, "dateDue")}</td>
 
-                    <td className="py-2 font-semibold">{r.amountPaid != null ? moneyFa(r.amountPaid) : "-"}</td>
-                    <td className="py-2 font-semibold">{r.allocatedAmount != null ? moneyFa(r.allocatedAmount) : "-"}</td>
-                    <td className="py-2 font-semibold">{r.remainingAmount != null ? moneyFa(r.remainingAmount) : "-"}</td>
+                    <td className="py-2 font-semibold">
+                      {r.amountPaid != null ? moneyFa(r.amountPaid) : "-"}
+                    </td>
+                    <td className="py-2 font-semibold">
+                      {r.allocatedAmount != null
+                        ? moneyFa(r.allocatedAmount)
+                        : "-"}
+                    </td>
+                    <td className="py-2 font-semibold">
+                      {r.remainingAmount != null
+                        ? moneyFa(r.remainingAmount)
+                        : "-"}
+                    </td>
 
                     <td className="py-2">
                       <span className="rounded-full bg-zinc-100 px-2 py-1 text-xs">
@@ -565,15 +698,25 @@ export default function TransactionsListPage() {
                       </span>
                     </td>
 
-                    <td className="py-2 truncate">{r.dsc || "-"}</td>
+                    <td className="py-2 ">{r.dsc || "-"}</td>
 
-                    <td className="py-2">
+                    <td className="py-2 sticky right-0 z-10 bg-white">
                       <div className="flex gap-2">
-                        <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/allocations`)}>
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            navigate(`/transactions/${r.id}/allocations`)
+                          }
+                        >
                           تخصیص‌ها
                         </Button>
 
-                        <Button variant="secondary" onClick={() => navigate(`/transactions/${r.id}/documents`)}>
+                        <Button
+                          variant="secondary"
+                          onClick={() =>
+                            navigate(`/transactions/${r.id}/documents`)
+                          }
+                        >
                           پیوست‌ها
                         </Button>
 
@@ -587,7 +730,12 @@ export default function TransactionsListPage() {
                               const fresh = await getTransactionById(r.id);
                               setEditing(fresh);
                             } catch (e) {
-                              toast.error(getApiErrorMessage(e, "خطا در دریافت اطلاعات تراکنش"));
+                              toast.error(
+                                getApiErrorMessage(
+                                  e,
+                                  "خطا در دریافت اطلاعات تراکنش"
+                                )
+                              );
                               setEditOpen(false);
                             } finally {
                               setEditLoading(false);
@@ -597,7 +745,10 @@ export default function TransactionsListPage() {
                           ویرایش
                         </Button>
 
-                        <Button variant="danger" onClick={() => setDeleteId(r.id)}>
+                        <Button
+                          variant="danger"
+                          onClick={() => setDeleteId(r.id)}
+                        >
                           حذف
                         </Button>
                       </div>
@@ -610,7 +761,11 @@ export default function TransactionsListPage() {
         </table>
       </div>
 
-      <Pagination page={page} totalPages={data.totalPages || 0} onPage={setPage} />
+      <Pagination
+        page={page}
+        totalPages={data.totalPages || 0}
+        onPage={setPage}
+      />
 
       <ConfirmDialog
         open={deleteId !== null}
