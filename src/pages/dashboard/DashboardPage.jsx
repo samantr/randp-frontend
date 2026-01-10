@@ -4,7 +4,6 @@ import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
 // ✅ use working ones from dashboardApi (axios-based)
 import {
-  getDashboardCashflow,
   getDashboardSummary,
   getLastRefresh,
   getTopPayers,
@@ -14,9 +13,9 @@ import {
   getPersonPayables,
   getItemCategoriesSummary,
   getItemsByCategory,
+  getDebtAgingByPerson,
 } from "../../api/dashboardApi";
 
-// ✅ bypass broken apiGet() inside dashboardApi.js for project drill endpoints
 import api from "../../api/axios";
 
 import {
@@ -26,11 +25,6 @@ import {
   Cell,
   Legend,
   Tooltip,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
 } from "recharts";
 
 /* ======================
@@ -87,6 +81,23 @@ function Modal({ open, title, onClose, children }) {
   );
 }
 
+function MiniTable({ title, subtitle, children, rightAction }) {
+  return (
+    <div className="bg-white border rounded-xl p-4">
+      <div className="flex items-center justify-between mb-3 gap-2">
+        <div>
+          <div className="font-semibold text-sm">{title}</div>
+          {subtitle ? (
+            <div className="text-[11px] text-zinc-500 mt-1">{subtitle}</div>
+          ) : null}
+        </div>
+        {rightAction ? <div>{rightAction}</div> : null}
+      </div>
+      {children}
+    </div>
+  );
+}
+
 function PieCard({ title, rows }) {
   const data = useMemo(
     () =>
@@ -135,49 +146,47 @@ function PieCard({ title, rows }) {
   );
 }
 
-function MiniTable({ title, subtitle, children, rightAction }) {
-  return (
-    <div className="bg-white border rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3 gap-2">
-        <div>
-          <div className="font-semibold text-sm">{title}</div>
-          {subtitle ? (
-            <div className="text-[11px] text-zinc-500 mt-1">{subtitle}</div>
-          ) : null}
-        </div>
-        {rightAction ? <div>{rightAction}</div> : null}
-      </div>
-      {children}
-    </div>
-  );
+/* ======================
+   Extra endpoints (axios direct)
+   ====================== */
+async function apiGetOpenDebtsCoverage({ from, to, limit }) {
+  const res = await api.get("/api/v1/dashboard/open-debts-coverage", {
+    params: { from, to, limit },
+  });
+  return res.data;
 }
 
-/* ======================
-   Project Drill API (bypass apiGet bug)
-   ====================== */
-async function apiGetProjectsRoot({ from, to, limit }) {
-  const res = await api.get("/api/v1/dashboard/projects-summary", {
+async function apiGetUnallocatedOverview({ from, to, limit }) {
+  const res = await api.get("/api/v1/dashboard/unallocated", {
     params: { from, to, limit },
+  });
+  return res.data; // { openDebts: [...], unallocatedExpenses: [...] }
+}
+
+async function apiGetRecentActivities({ limit }) {
+  const res = await api.get("/api/v1/dashboard/recent-activities", {
+    params: { limit },
   });
   return res.data;
 }
-async function apiGetProjectChildren({ projectId, from, to, limit }) {
-  const res = await api.get(`/api/v1/dashboard/projects/${projectId}/children`, {
-    params: { from, to, limit },
+
+// Executive KPIs kept ONLY for EXP/TRN totals (visual cards)
+async function apiGetExecutiveKpis({ from, to, asOf }) {
+  const res = await api.get("/api/v1/dashboard/executive-kpis", {
+    params: { from, to, asOf },
   });
   return res.data;
 }
-async function apiGetProjectCategories({ projectId, from, to, limit }) {
-  const res = await api.get(`/api/v1/dashboard/projects/${projectId}/categories`, {
-    params: { from, to, limit },
-  });
-  return res.data;
-}
-async function apiGetProjectItems({ projectId, itemCategoryId, from, to, limit }) {
-  const params = { from, to, limit };
-  if (itemCategoryId) params.itemCategoryId = itemCategoryId;
-  const res = await api.get(`/api/v1/dashboard/projects/${projectId}/items`, { params });
-  return res.data;
+
+function badge(type) {
+  const t = String(type || "").toUpperCase();
+  if (t === "DEBT")
+    return "bg-amber-50 text-amber-700 border-amber-200";
+  if (t === "TRANSACTION")
+    return "bg-blue-50 text-blue-700 border-blue-200";
+  if (t === "ALLOCATION")
+    return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  return "bg-zinc-50 text-zinc-700 border-zinc-200";
 }
 
 export default function DashboardPage() {
@@ -188,7 +197,6 @@ export default function DashboardPage() {
   const [refreshing, setRefreshing] = useState(false);
 
   const [kpis, setKpis] = useState(null);
-  const [cashflow, setCashflow] = useState([]);
   const [topPayers, setTopPayers] = useState([]);
   const [topReceivers, setTopReceivers] = useState([]);
   const [lastRefresh, setLastRefresh] = useState(null);
@@ -205,47 +213,47 @@ export default function DashboardPage() {
   const [itemsByCategory, setItemsByCategory] = useState([]);
   const [itemsByCategoryLoading, setItemsByCategoryLoading] = useState(false);
 
-  // ✅ Projects drill (root → children → categories → items)
-  const [projectsRoot, setProjectsRoot] = useState([]);
-  const [projStack, setProjStack] = useState([]); // [{projectId, projectTitle}]
-  const [projMode, setProjMode] = useState("root"); // root | children | categories | items
-  const [projRows, setProjRows] = useState([]); // used in children mode
-  const [projCategories, setProjCategories] = useState([]);
-  const [projItems, setProjItems] = useState([]);
-  const [projSelectedCategory, setProjSelectedCategory] = useState(null);
-  const [projLoading, setProjLoading] = useState(false);
+  // debt aging (person only) — simplified columns
+  const [debtAgingPersons, setDebtAgingPersons] = useState([]);
 
-  const projCurrent = useMemo(
-    () => (projStack.length ? projStack[projStack.length - 1] : null),
-    [projStack]
-  );
+  // open debts vs covered
+  const [openDebtsCoverage, setOpenDebtsCoverage] = useState([]);
 
-  const cashflowLineData = useMemo(() => {
-    return (cashflow || []).map((x) => ({
-      date: x.date ?? x.day ?? x.label,
-      amount: Number(x.amount || 0),
-    }));
-  }, [cashflow]);
+  // unallocated overview
+  const [unallocatedOpenDebts, setUnallocatedOpenDebts] = useState([]);
+  const [unallocatedExpenseTxs, setUnallocatedExpenseTxs] = useState([]);
 
-  function projBreadcrumb() {
-    if (!projStack.length) return "پروژه‌ها (ریشه)";
-    return projStack.map((x) => x.projectTitle).join(" ← ");
-  }
+  // recent activity feed
+  const [recentActivities, setRecentActivities] = useState([]);
+
+  // executive totals (only used for 2 cards)
+  const [execKpis, setExecKpis] = useState(null);
 
   async function loadAll() {
     setLoading(true);
 
     const calls = {
       summary: () => getDashboardSummary({ from, to }),
-      cashflow: () => getDashboardCashflow({ from, to }),
       topPayers: () => getTopPayers({ from, to, limit: 10 }),
       topReceivers: () => getTopReceivers({ from, to, limit: 10 }),
       lastRefresh: () => getLastRefresh(),
-      personsSummary: () => getPersonsSummary({ from, to, limit: 50 }),
-      itemCategoriesSummary: () => getItemCategoriesSummary({ from, to, limit: 50 }),
 
-      // ✅ projects root (bypass dashboardApi bug)
-      projectsRoot: () => apiGetProjectsRoot({ from, to, limit: 50 }),
+      personsSummary: () => getPersonsSummary({ from, to, limit: 50 }),
+      itemCategoriesSummary: () =>
+        getItemCategoriesSummary({ from, to, limit: 50 }),
+
+      // simplified aging: still fetched, but UI shows only person + open_total
+      debtAgingPersons: () =>
+        getDebtAgingByPerson({ from, to, asOf: to, limit: 50 }),
+
+      openDebtsCoverage: () => apiGetOpenDebtsCoverage({ from, to, limit: 50 }),
+
+      unallocatedOverview: () =>
+        apiGetUnallocatedOverview({ from, to, limit: 50 }),
+
+      recentActivities: () => apiGetRecentActivities({ limit: 20 }),
+
+      executiveKpis: () => apiGetExecutiveKpis({ from, to, asOf: to }),
     };
 
     try {
@@ -260,9 +268,6 @@ export default function DashboardPage() {
 
       const s = get("summary");
       if (s !== undefined) setKpis(s);
-
-      const cf = get("cashflow");
-      if (cf !== undefined) setCashflow(cf || []);
 
       const tp = get("topPayers");
       if (tp !== undefined) setTopPayers(tp || []);
@@ -279,16 +284,25 @@ export default function DashboardPage() {
       const ic = get("itemCategoriesSummary");
       if (ic !== undefined) setItemCategoriesSummary(ic || []);
 
-      const pr = get("projectsRoot");
-      if (pr !== undefined) setProjectsRoot(pr || []);
+      const dap = get("debtAgingPersons");
+      if (dap !== undefined) setDebtAgingPersons(dap || []);
 
-      // reset project drill state on load
-      setProjStack([]);
-      setProjMode("root");
-      setProjRows([]);
-      setProjCategories([]);
-      setProjItems([]);
-      setProjSelectedCategory(null);
+      const odc = get("openDebtsCoverage");
+      if (odc !== undefined) setOpenDebtsCoverage(odc || []);
+
+      const uo = get("unallocatedOverview");
+      if (uo !== undefined) {
+        setUnallocatedOpenDebts(uo?.openDebts || uo?.open_debts || []);
+        setUnallocatedExpenseTxs(
+          uo?.unallocatedExpenses || uo?.unallocated_expenses || []
+        );
+      }
+
+      const ra = get("recentActivities");
+      if (ra !== undefined) setRecentActivities(ra || []);
+
+      const ek = get("executiveKpis");
+      if (ek !== undefined) setExecKpis(ek);
 
       // show failures with real reason
       results.forEach((r, i) => {
@@ -337,7 +351,10 @@ export default function DashboardPage() {
   }
 
   async function openItemCategoryDrill(c) {
-    setSelectedItemCategory({ itemCategoryId: c.itemCategoryId, title: c.title });
+    setSelectedItemCategory({
+      itemCategoryId: c.itemCategoryId,
+      title: c.title,
+    });
     setItemsByCategory([]);
     setItemsByCategoryLoading(true);
     try {
@@ -355,299 +372,10 @@ export default function DashboardPage() {
     }
   }
 
-  /* ======================
-     Projects drill handlers
-     ====================== */
-  async function openProjectRootNode(p) {
-    const projectId = p.projectId;
-    const projectTitle = p.projectTitle || `پروژه ${projectId}`;
-
-    setProjLoading(true);
-    setProjSelectedCategory(null);
-    setProjCategories([]);
-    setProjItems([]);
-    try {
-      // push
-      setProjStack((prev) => [...prev, { projectId, projectTitle }]);
-
-      // first try children
-      const children = await apiGetProjectChildren({
-        projectId,
-        from,
-        to,
-        limit: 200,
-      });
-
-      if (children?.length) {
-        setProjMode("children");
-        setProjRows(children);
-        return;
-      }
-
-      // if no children -> categories
-      const cats = await apiGetProjectCategories({
-        projectId,
-        from,
-        to,
-        limit: 200,
-      });
-      setProjMode("categories");
-      setProjCategories(cats || []);
-      setProjRows([]);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e) || "خطا");
-    } finally {
-      setProjLoading(false);
-    }
-  }
-
-  async function openChildProject(p) {
-    const projectId = p.projectId;
-    const projectTitle = p.projectTitle || `پروژه ${projectId}`;
-
-    setProjLoading(true);
-    setProjSelectedCategory(null);
-    setProjCategories([]);
-    setProjItems([]);
-    try {
-      setProjStack((prev) => [...prev, { projectId, projectTitle }]);
-
-      const children = await apiGetProjectChildren({
-        projectId,
-        from,
-        to,
-        limit: 200,
-      });
-
-      if (children?.length) {
-        setProjMode("children");
-        setProjRows(children);
-        return;
-      }
-
-      const cats = await apiGetProjectCategories({
-        projectId,
-        from,
-        to,
-        limit: 200,
-      });
-      setProjMode("categories");
-      setProjCategories(cats || []);
-      setProjRows([]);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e) || "خطا");
-    } finally {
-      setProjLoading(false);
-    }
-  }
-
-  async function openProjectCategory(cat) {
-    if (!projCurrent) return;
-    const projectId = projCurrent.projectId;
-
-    setProjLoading(true);
-    setProjSelectedCategory({ itemCategoryId: cat.itemCategoryId, title: cat.title });
-    setProjItems([]);
-
-    try {
-      const items = await apiGetProjectItems({
-        projectId,
-        itemCategoryId: cat.itemCategoryId,
-        from,
-        to,
-        limit: 300,
-      });
-      setProjMode("items");
-      setProjItems(items || []);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e) || "خطا");
-    } finally {
-      setProjLoading(false);
-    }
-  }
-
-  async function openAllProjectItems() {
-    if (!projCurrent) return;
-    const projectId = projCurrent.projectId;
-
-    setProjLoading(true);
-    setProjSelectedCategory(null);
-    setProjItems([]);
-
-    try {
-      const items = await apiGetProjectItems({
-        projectId,
-        itemCategoryId: null,
-        from,
-        to,
-        limit: 300,
-      });
-      setProjMode("items");
-      setProjItems(items || []);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e) || "خطا");
-    } finally {
-      setProjLoading(false);
-    }
-  }
-
-  async function projBack() {
-    // items -> categories
-    if (projMode === "items") {
-      setProjMode("categories");
-      setProjItems([]);
-      setProjSelectedCategory(null);
-      return;
-    }
-
-    // categories/children -> pop stack and show parent's children (or root)
-    if (projMode === "categories" || projMode === "children") {
-      const next = projStack.slice(0, -1);
-      setProjStack(next);
-
-      setProjSelectedCategory(null);
-      setProjCategories([]);
-      setProjItems([]);
-      setProjRows([]);
-
-      if (!next.length) {
-        setProjMode("root");
-        return;
-      }
-
-      // load parent's children; if none => categories
-      const parent = next[next.length - 1];
-      setProjLoading(true);
-      try {
-        const children = await apiGetProjectChildren({
-          projectId: parent.projectId,
-          from,
-          to,
-          limit: 200,
-        });
-
-        if (children?.length) {
-          setProjMode("children");
-          setProjRows(children);
-        } else {
-          const cats = await apiGetProjectCategories({
-            projectId: parent.projectId,
-            from,
-            to,
-            limit: 200,
-          });
-          setProjMode("categories");
-          setProjCategories(cats || []);
-        }
-      } catch (e) {
-        toast.error(getApiErrorMessage(e) || "خطا");
-      } finally {
-        setProjLoading(false);
-      }
-    }
-  }
-
   useEffect(() => {
     loadAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  /* ======================
-     UI (tables)
-     ====================== */
-  const ProjectTable = ({ rows, onClickRow }) => {
-    if (!rows?.length) return <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>;
-    return (
-      <div className="overflow-auto">
-        <table className="min-w-[900px] w-full text-sm">
-          <thead>
-            <tr className="text-xs text-zinc-600 border-b">
-              <th className="text-right py-2">پروژه</th>
-              <th className="text-left py-2">جمع بدهی</th>
-              <th className="text-left py-2">پرداخت/تخصیص</th>
-              <th className="text-left py-2">مانده</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((p) => (
-              <tr
-                key={p.projectId}
-                className="border-b hover:bg-zinc-50 cursor-pointer"
-                onClick={() => onClickRow(p)}
-                title="کلیک برای Drill"
-              >
-                <td className="py-2 text-right">{p.projectTitle || `پروژه ${p.projectId}`}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(p.totalDebt)}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(p.totalAllocated)}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(p.remaining)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  const CategoryTable = ({ rows, onClickRow }) => {
-    if (!rows?.length) return <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>;
-    return (
-      <div className="overflow-auto">
-        <table className="min-w-[900px] w-full text-sm">
-          <thead>
-            <tr className="text-xs text-zinc-600 border-b">
-              <th className="text-right py-2">دسته‌بندی</th>
-              <th className="text-left py-2">جمع بدهی</th>
-              <th className="text-left py-2">پرداخت/تخصیص</th>
-              <th className="text-left py-2">مانده</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((c) => (
-              <tr
-                key={c.itemCategoryId}
-                className="border-b hover:bg-zinc-50 cursor-pointer"
-                onClick={() => onClickRow(c)}
-                title="کلیک برای مشاهده آیتم‌ها"
-              >
-                <td className="py-2 text-right">{c.title}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(c.amount)}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(c.allocatedAmount)}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(c.remaining)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
-
-  const ItemsTable = ({ rows }) => {
-    if (!rows?.length) return <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>;
-    return (
-      <div className="overflow-auto">
-        <table className="min-w-[900px] w-full text-sm">
-          <thead>
-            <tr className="text-xs text-zinc-600 border-b">
-              <th className="text-right py-2">آیتم</th>
-              <th className="text-left py-2">جمع بدهی</th>
-              <th className="text-left py-2">پرداخت/تخصیص</th>
-              <th className="text-left py-2">مانده</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((it, idx) => (
-              <tr key={`${it.itemId ?? it.item_id ?? idx}`} className="border-b">
-                <td className="py-2 text-right">{it.title}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(it.amount)}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(it.allocatedAmount)}</td>
-                <td className="py-2 text-left font-mono">{formatNumber(it.remaining)}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
-  };
 
   return (
     <div className="p-4 space-y-4">
@@ -710,49 +438,51 @@ export default function DashboardPage() {
         </div>
         <div className="bg-white border rounded-xl p-4">
           <div className="text-xs text-zinc-500">تعداد تراکنش‌ها</div>
-          <div className="text-lg font-bold mt-1">{formatNumber(kpis?.transactionsCount)}</div>
+          <div className="text-lg font-bold mt-1">
+            {formatNumber(kpis?.transactionsCount)}
+          </div>
         </div>
         <div className="bg-white border rounded-xl p-4">
           <div className="text-xs text-zinc-500">جمع بدهی‌ها (اقلام)</div>
-          <div className="text-lg font-bold mt-1">{formatNumber(kpis?.totalDebtAmount)}</div>
+          <div className="text-lg font-bold mt-1">
+            {formatNumber(kpis?.totalDebtAmount)}
+          </div>
         </div>
         <div className="bg-white border rounded-xl p-4">
           <div className="text-xs text-zinc-500">جمع تخصیص‌ها</div>
-          <div className="text-lg font-bold mt-1">{formatNumber(kpis?.totalAllocatedAmount)}</div>
+          <div className="text-lg font-bold mt-1">
+            {formatNumber(kpis?.totalAllocatedAmount)}
+          </div>
         </div>
         <div className="bg-white border rounded-xl p-4">
           <div className="text-xs text-zinc-500">مانده بدهی (تقریبی)</div>
-          <div className="text-lg font-bold mt-1">{formatNumber(kpis?.outstandingDebtAmount)}</div>
+          <div className="text-lg font-bold mt-1">
+            {formatNumber(kpis?.outstandingDebtAmount)}
+          </div>
         </div>
       </div>
 
-      {/* Cashflow Line Chart */}
-      <div className="bg-white border rounded-xl p-4 h-[360px]">
-        <div className="font-semibold text-sm mb-3">روند مبلغ تراکنش‌ها (روزانه)</div>
+      {/* Executive (simplified) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <div className="bg-white border rounded-xl p-4">
+          <div className="text-xs text-zinc-500">جمع هزینه‌ها (EXP)</div>
+          <div className="text-lg font-bold mt-1">
+            {formatNumber(execKpis?.totalExpenseAmount ?? execKpis?.total_expense_amount)}
+          </div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            برای تخصیص‌ها فقط هزینه‌ها مبنا هستند.
+          </div>
+        </div>
 
-        {cashflowLineData.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-        ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={cashflowLineData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis dataKey="date" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => formatNumber(v)} />
-              <Tooltip
-                formatter={(v) => formatNumber(v)}
-                labelFormatter={(l) => `تاریخ: ${l}`}
-              />
-              <Line
-                type="monotone"
-                dataKey="amount"
-                stroke="#2563EB"
-                strokeWidth={2.5}
-                dot={{ r: 3 }}
-                activeDot={{ r: 5 }}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        )}
+        <div className="bg-white border rounded-xl p-4">
+          <div className="text-xs text-zinc-500">جمع تنخواه (TRN)</div>
+          <div className="text-lg font-bold mt-1">
+            {formatNumber(execKpis?.totalTankhahAmount ?? execKpis?.total_tankhah_amount)}
+          </div>
+          <div className="text-[11px] text-zinc-500 mt-1">
+            تنخواه الزاماً نیاز به تخصیص ندارد.
+          </div>
+        </div>
       </div>
 
       {/* Pies */}
@@ -761,122 +491,55 @@ export default function DashboardPage() {
         <PieCard title="بیشترین دریافت‌کنندگان" rows={topReceivers} />
       </div>
 
-      {/* Drills */}
-      <div className="grid grid-cols-1 lg:grid-cols-1 gap-3">
-        {/* Projects drill */}
-        <MiniTable
-          title={`پروژه‌ها (Drill)`}
-          subtitle={
-            projMode === "root"
-              ? "فقط پروژه‌های ریشه نمایش داده می‌شوند. برای Drill کلیک کنید."
-              : projBreadcrumb()
-          }
-          rightAction={
-            projMode !== "root" ? (
-              <button
-                onClick={projBack}
-                disabled={projLoading}
-                className="bg-white border rounded-xl px-3 py-1.5 text-xs hover:bg-zinc-50 disabled:opacity-60"
-              >
-                بازگشت
-              </button>
-            ) : null
-          }
-        >
-          {projLoading ? (
-            <div className="text-xs text-zinc-500">در حال بارگذاری...</div>
-          ) : projMode === "root" ? (
-            <ProjectTable rows={projectsRoot} onClickRow={openProjectRootNode} />
-          ) : projMode === "children" ? (
-            <ProjectTable rows={projRows} onClickRow={openChildProject} />
-          ) : projMode === "categories" ? (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-xs text-zinc-600">
-                  {projCurrent ? `پروژه: ${projCurrent.projectTitle}` : ""}
-                </div>
-                <button
-                  onClick={openAllProjectItems}
-                  disabled={projLoading}
-                  className="bg-zinc-900 text-white rounded-xl px-3 py-1.5 text-xs hover:bg-zinc-800 disabled:opacity-60"
-                >
-                  نمایش همه آیتم‌ها
-                </button>
-              </div>
-              <CategoryTable rows={projCategories} onClickRow={openProjectCategory} />
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="text-xs text-zinc-600">
-                  {projCurrent ? `پروژه: ${projCurrent.projectTitle}` : ""}
-                  {projSelectedCategory?.title ? ` | دسته: ${projSelectedCategory.title}` : ""}
-                </div>
-                <div className="flex items-center gap-2">
-                  {projSelectedCategory ? (
-                    <button
-                      onClick={openAllProjectItems}
-                      className="bg-white border rounded-xl px-3 py-1.5 text-xs hover:bg-zinc-50"
-                    >
-                      حذف فیلتر دسته
-                    </button>
-                  ) : null}
-                  <button
-                    onClick={() => setProjMode("categories")}
-                    className="bg-white border rounded-xl px-3 py-1.5 text-xs hover:bg-zinc-50"
+      {/* Item Categories drill */}
+      <MiniTable
+        title="دسته‌بندی‌های کالا/خدمات (Drill)"
+        subtitle="کلیک روی هر دسته برای مشاهده آیتم‌ها"
+      >
+        {itemCategoriesSummary.length === 0 ? (
+          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-[900px] w-full text-sm">
+              <thead>
+                <tr className="text-xs text-zinc-600 border-b">
+                  <th className="text-right py-2">دسته</th>
+                  <th className="text-left py-2">جمع بدهی</th>
+                  <th className="text-left py-2">پرداخت/تخصیص</th>
+                  <th className="text-left py-2">مانده</th>
+                </tr>
+              </thead>
+              <tbody>
+                {itemCategoriesSummary.map((c) => (
+                  <tr
+                    key={c.itemCategoryId}
+                    className="border-b hover:bg-zinc-50 cursor-pointer transition"
+                    onClick={() => openItemCategoryDrill(c)}
+                    title="کلیک برای Drill"
                   >
-                    بازگشت به دسته‌ها
-                  </button>
-                </div>
-              </div>
-              <ItemsTable rows={projItems} />
-            </div>
-          )}
-        </MiniTable>
-
-        {/* Item Categories drill */}
-        <MiniTable
-          title="دسته‌بندی‌های کالا/خدمات (Drill)"
-          subtitle="کلیک روی هر دسته برای مشاهده آیتم‌ها"
-        >
-          {itemCategoriesSummary.length === 0 ? (
-            <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-          ) : (
-            <div className="overflow-auto">
-              <table className="min-w-[900px] w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-zinc-600 border-b">
-                    <th className="text-right py-2">دسته</th>
-                    <th className="text-left py-2">جمع بدهی</th>
-                    <th className="text-left py-2">پرداخت/تخصیص</th>
-                    <th className="text-left py-2">مانده</th>
+                    <td className="py-2 text-right">{c.title}</td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(c.amount)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(c.allocatedAmount)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(c.remaining)}
+                    </td>
                   </tr>
-                </thead>
-                <tbody>
-                  {itemCategoriesSummary.map((c) => (
-                    <tr
-                      key={c.itemCategoryId}
-                      className="border-b hover:bg-zinc-50 cursor-pointer"
-                      onClick={() => openItemCategoryDrill(c)}
-                      title="کلیک برای Drill"
-                    >
-                      <td className="py-2 text-right">{c.title}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(c.amount)}</td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(c.allocatedAmount)}
-                      </td>
-                      <td className="py-2 text-left font-mono">{formatNumber(c.remaining)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </MiniTable>
-      </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </MiniTable>
 
-      {/* Persons drill (keep) */}
-      <MiniTable title="اشخاص" subtitle="کلیک روی شخص برای دیدن بدهی‌های قابل پرداخت">
+      {/* Persons drill */}
+      <MiniTable
+        title="اشخاص"
+        subtitle="کلیک روی شخص برای دیدن بدهی‌های قابل پرداخت"
+      >
         {personsSummary.length === 0 ? (
           <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
         ) : (
@@ -895,19 +558,286 @@ export default function DashboardPage() {
                 {personsSummary.map((p) => (
                   <tr
                     key={p.personId}
-                    className="border-b hover:bg-zinc-50 cursor-pointer"
+                    className="border-b hover:bg-zinc-50 cursor-pointer transition"
                     onClick={() => openPersonPayables(p)}
                     title="کلیک برای Drill"
                   >
                     <td className="py-2 text-right">{p.displayName}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.totalDebt)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.totalPaid)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.totalReceived)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.remain)}</td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(p.totalDebt)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(p.totalPaid)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(p.totalReceived)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(p.remain)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        )}
+      </MiniTable>
+
+      {/* Debt Aging (simplified) */}
+      <MiniTable
+        title="گزارش سررسید بدهی‌ها (اشخاص)"
+        subtitle="فقط جمع مانده بدهی‌های باز (ستون‌های بازه حذف شدند)"
+      >
+        {debtAgingPersons.length === 0 ? (
+          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-[900px] w-full text-sm">
+              <thead>
+                <tr className="text-xs text-zinc-600 border-b">
+                  <th className="text-right py-2">شخص</th>
+                  <th className="text-left py-2">جمع مانده</th>
+                </tr>
+              </thead>
+              <tbody>
+                {debtAgingPersons.map((r) => (
+                  <tr key={r.person_id ?? r.personId} className="border-b">
+                    <td className="py-2 text-right">
+                      {r.display_name ?? r.displayName}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.open_total ?? r.openTotal)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </MiniTable>
+
+      {/* Open Debts vs Covered */}
+      <MiniTable
+        title="بدهی‌های باز / میزان پوشش"
+        subtitle="نمایش بدهی‌هایی که هنوز مانده دارند (بازه تاریخ انتخاب‌شده)"
+      >
+        {openDebtsCoverage.length === 0 ? (
+          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+        ) : (
+          <div className="overflow-auto">
+            <table className="min-w-[1200px] w-full text-sm">
+              <thead>
+                <tr className="text-xs text-zinc-600 border-b">
+                  <th className="text-right py-2">ID</th>
+                  <th className="text-right py-2">تاریخ</th>
+                  <th className="text-right py-2">شخص</th>
+                  <th className="text-right py-2">پروژه</th>
+                  <th className="text-left py-2">جمع بدهی</th>
+                  <th className="text-left py-2">تخصیص</th>
+                  <th className="text-left py-2">مانده</th>
+                  <th className="text-right py-2">پوشش</th>
+                </tr>
+              </thead>
+              <tbody>
+                {openDebtsCoverage.map((r) => {
+                  const debtId = r.debt_header_id ?? r.debtHeaderId;
+                  const debtDate = r.debt_date ?? r.debtDate;
+                  const personName = r.person_name ?? r.personName;
+                  const projectTitle = r.project_title ?? r.projectTitle;
+
+                  const totalDebt = r.total_debt ?? r.totalDebt;
+                  const allocated = r.allocated_amount ?? r.allocatedAmount;
+                  const remaining = r.remaining ?? 0;
+                  const pct = Number(r.covered_percent ?? r.coveredPercent ?? 0);
+
+                  return (
+                    <tr key={debtId} className="border-b hover:bg-zinc-50 transition">
+                      <td className="py-2 text-right font-mono">{debtId}</td>
+                      <td className="py-2 text-right font-mono">{debtDate}</td>
+                      <td className="py-2 text-right">{personName}</td>
+                      <td className="py-2 text-right">{projectTitle}</td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(totalDebt)}
+                      </td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(allocated)}
+                      </td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(remaining)}
+                      </td>
+                      <td className="py-2 text-right">
+                        <div className="flex items-center gap-2 justify-end">
+                          <div className="w-28 h-2 bg-zinc-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-2 bg-emerald-600"
+                              style={{
+                                width: `${Math.max(0, Math.min(100, pct))}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="text-[11px] font-mono w-12 text-left">
+                            {pct.toFixed(0)}%
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </MiniTable>
+
+      {/* Unallocated overview (kept) */}
+      <MiniTable
+        title="تخصیص‌نیافته‌ها"
+        subtitle="بدهی‌های باز + هزینه‌های بدون تخصیص (تنخواه/TRN نمایش داده نمی‌شود)"
+      >
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {/* Open Debts */}
+          <div className="bg-white border rounded-xl p-3">
+            <div className="text-sm font-semibold mb-2">بدهی‌های باز</div>
+
+            {unallocatedOpenDebts.length === 0 ? (
+              <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+            ) : (
+              <div className="overflow-auto">
+                <table className="min-w-[900px] w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-zinc-600 border-b">
+                      <th className="text-right py-2">ID</th>
+                      <th className="text-right py-2">تاریخ</th>
+                      <th className="text-right py-2">شخص</th>
+                      <th className="text-right py-2">پروژه</th>
+                      <th className="text-left py-2">جمع بدهی</th>
+                      <th className="text-left py-2">تخصیص</th>
+                      <th className="text-left py-2">مانده</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unallocatedOpenDebts.map((r, idx) => {
+                      const debtId = r.debt_header_id ?? r.debtHeaderId ?? idx;
+                      const debtDate = r.debt_date ?? r.debtDate ?? "-";
+                      const personName =
+                        r.person_name ??
+                        r.personName ??
+                        r.display_name ??
+                        r.displayName ??
+                        "-";
+                      const projectTitle = r.project_title ?? r.projectTitle ?? "-";
+                      const totalDebt = r.total_debt ?? r.totalDebt ?? 0;
+                      const allocated = r.allocated_amount ?? r.allocatedAmount ?? 0;
+                      const remaining = r.remaining ?? 0;
+
+                      return (
+                        <tr key={debtId} className="border-b hover:bg-zinc-50 transition">
+                          <td className="py-2 text-right font-mono">{debtId}</td>
+                          <td className="py-2 text-right font-mono">{debtDate}</td>
+                          <td className="py-2 text-right">{personName}</td>
+                          <td className="py-2 text-right">{projectTitle}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(totalDebt)}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(allocated)}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(remaining)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Unallocated EXP Transactions */}
+          <div className="bg-white border rounded-xl p-3">
+            <div className="text-sm font-semibold mb-2">
+              هزینه‌های بدون تخصیص (فقط EXP)
+            </div>
+
+            {unallocatedExpenseTxs.length === 0 ? (
+              <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+            ) : (
+              <div className="overflow-auto">
+                <table className="min-w-[980px] w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-zinc-600 border-b">
+                      <th className="text-right py-2">ID</th>
+                      <th className="text-right py-2">تاریخ</th>
+                      <th className="text-right py-2">از</th>
+                      <th className="text-right py-2">به</th>
+                      <th className="text-right py-2">پروژه</th>
+                      <th className="text-left py-2">مبلغ</th>
+                      <th className="text-left py-2">تخصیص</th>
+                      <th className="text-left py-2">مانده</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unallocatedExpenseTxs.map((r, idx) => {
+                      const txId = r.transaction_id ?? r.transactionId ?? idx;
+                      const txDate = r.tx_date ?? r.txDate ?? "-";
+                      const fromName = r.from_person_name ?? r.fromPersonName ?? "-";
+                      const toName = r.to_person_name ?? r.toPersonName ?? "-";
+                      const projectTitle = r.project_title ?? r.projectTitle ?? "-";
+                      const amount = r.amount ?? 0;
+                      const allocated = r.allocated_amount ?? r.allocatedAmount ?? 0;
+                      const remaining = r.remaining ?? 0;
+
+                      return (
+                        <tr key={txId} className="border-b hover:bg-zinc-50 transition">
+                          <td className="py-2 text-right font-mono">{txId}</td>
+                          <td className="py-2 text-right font-mono">{txDate}</td>
+                          <td className="py-2 text-right">{fromName}</td>
+                          <td className="py-2 text-right">{toName}</td>
+                          <td className="py-2 text-right">{projectTitle}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(amount)}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(allocated)}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(remaining)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      </MiniTable>
+
+      {/* Recent Activity Feed (visual) */}
+      <MiniTable title="آخرین فعالیت‌ها" subtitle="ثبت بدهی، تراکنش و تخصیص‌ها">
+        {recentActivities.length === 0 ? (
+          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+        ) : (
+          <div className="space-y-2">
+            {recentActivities.map((a, idx) => {
+              const type = a.activityType ?? a.activity_type;
+              const time = a.activityTime ?? a.activity_time;
+              const title = a.title ?? "-";
+              const amount = a.amount ?? 0;
+
+              return (
+                <div
+                  key={idx}
+                  className="flex items-start justify-between gap-3 border rounded-xl px-3 py-2 text-sm hover:bg-zinc-50 transition"
+                >
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[11px] px-2 py-0.5 rounded-full border ${badge(type)}`}
+                      >
+                        {type}
+                      </span>
+                      <div className="text-xs text-zinc-500">{time}</div>
+                    </div>
+                    <div className="font-medium mt-1 truncate">{title}</div>
+                  </div>
+
+                  <div className="font-mono whitespace-nowrap">
+                    {formatNumber(amount)}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </MiniTable>
@@ -942,11 +872,22 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {personPayables.map((r, idx) => (
-                  <tr key={`${r.debtHeaderId ?? r.debt_header_id ?? idx}`} className="border-b">
-                    <td className="py-2 text-right">{r.debtHeaderId ?? r.debt_header_id}</td>
-                    <td className="py-2 text-right">{r.debtDate ?? r.debt_date}</td>
-                    <td className="py-2 text-right">{r.projectTitle ?? r.project_title}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
+                  <tr
+                    key={`${r.debtHeaderId ?? r.debt_header_id ?? idx}`}
+                    className="border-b"
+                  >
+                    <td className="py-2 text-right">
+                      {r.debtHeaderId ?? r.debt_header_id}
+                    </td>
+                    <td className="py-2 text-right">
+                      {r.debtDate ?? r.debt_date}
+                    </td>
+                    <td className="py-2 text-right">
+                      {r.projectTitle ?? r.project_title}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.remaining)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -984,13 +925,20 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {itemsByCategory.map((it, idx) => (
-                  <tr key={`${it.itemId ?? it.item_id ?? idx}`} className="border-b">
+                  <tr
+                    key={`${it.itemId ?? it.item_id ?? idx}`}
+                    className="border-b"
+                  >
                     <td className="py-2 text-right">{it.title}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(it.amount)}</td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(it.amount)}
+                    </td>
                     <td className="py-2 text-left font-mono">
                       {formatNumber(it.allocatedAmount)}
                     </td>
-                    <td className="py-2 text-left font-mono">{formatNumber(it.remaining)}</td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(it.remaining)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

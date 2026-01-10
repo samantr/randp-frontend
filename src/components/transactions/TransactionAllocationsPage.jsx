@@ -20,6 +20,18 @@ import {
 } from "../../api/transactionAllocationsApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
+function openDebtInNewTab(debtId) {
+  if (!debtId) return;
+
+  const params = new URLSearchParams();
+  params.set("hf_debtId", String(debtId));
+  params.set("sid", String(debtId));
+  params.set("pi", "0");
+
+  const url = `/debts?${params.toString()}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function moneyFa(v) {
   return Number(v || 0).toLocaleString("fa-IR");
 }
@@ -59,7 +71,9 @@ function transactionTypeLabel(code) {
 function debtLabel(d) {
   if (!d) return "-";
   const title = d.personTitle || `#${d.id}`;
-  return `${title} | جمع: ${moneyFa(d.totalAmount)} | مانده: ${moneyFa(d.remainingAmount)}`;
+  return `${title} | جمع: ${moneyFa(d.totalAmount)} | مانده: ${moneyFa(
+    d.remainingAmount
+  )}`;
 }
 
 export default function TransactionAllocationsPage() {
@@ -117,7 +131,9 @@ export default function TransactionAllocationsPage() {
       {
         key: "personTitle",
         title: "شخص/سازمان",
-        render: (r) => <span className="font-semibold">{r.personTitle || "-"}</span>,
+        render: (r) => (
+          <span className="font-semibold">{r.personTitle || "-"}</span>
+        ),
       },
 
       // ✅ CHANGED: Registered Date -> Due Date
@@ -131,10 +147,26 @@ export default function TransactionAllocationsPage() {
         },
       },
 
-      { key: "totalAmount", title: "جمع", render: (r) => moneyFa(r.totalAmount) },
-      { key: "allocatedAmount", title: "تخصیص", render: (r) => moneyFa(r.allocatedAmount) },
-      { key: "remainingAmount", title: "مانده", render: (r) => moneyFa(r.remainingAmount) },
-      { key: "editableRemainingAmount", title: "قابل‌ویرایش", render: (r) => moneyFa(r.editableRemainingAmount) },
+      {
+        key: "totalAmount",
+        title: "جمع",
+        render: (r) => moneyFa(r.totalAmount),
+      },
+      {
+        key: "allocatedAmount",
+        title: "تخصیص",
+        render: (r) => moneyFa(r.allocatedAmount),
+      },
+      {
+        key: "remainingAmount",
+        title: "مانده",
+        render: (r) => moneyFa(r.remainingAmount),
+      },
+      {
+        key: "editableRemainingAmount",
+        title: "قابل‌ویرایش",
+        render: (r) => moneyFa(r.editableRemainingAmount),
+      },
 
       // ✅ ADDED: Description
       {
@@ -164,7 +196,8 @@ export default function TransactionAllocationsPage() {
 
       try {
         const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
-        const projects = normalizePageLike(projectsRes).content || projectsRes || [];
+        const projects =
+          normalizePageLike(projectsRes).content || projectsRes || [];
         const pr = {};
         for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
         if (alive) setProjectsMap(pr);
@@ -269,7 +302,9 @@ export default function TransactionAllocationsPage() {
     setEditDsc(row.dsc || "");
 
     try {
-      const data = await listDebtCandidatesForTransaction(transactionId, { allocationId: row.id });
+      const data = await listDebtCandidatesForTransaction(transactionId, {
+        allocationId: row.id,
+      });
       setEditDebtCandidates(Array.isArray(data) ? data : []);
     } catch {
       setEditDebtCandidates([]);
@@ -324,7 +359,9 @@ export default function TransactionAllocationsPage() {
       {/* Header */}
       <div className="rounded-2xl border bg-white p-3">
         <div className="flex items-center justify-between">
-          <div className="font-bold text-lg">تخصیص‌ها (Transaction #{transactionId})</div>
+          <div className="font-bold text-lg">
+            تخصیص‌ها (Transaction #{transactionId})
+          </div>
           <Button variant="secondary" onClick={() => window.history.back()}>
             بازگشت
           </Button>
@@ -339,40 +376,56 @@ export default function TransactionAllocationsPage() {
             </div>
             <div>
               <span className="text-zinc-600">پروژه:</span>{" "}
-              <b>{projectsMap[tx.projectId] || (tx.projectId ? `#${tx.projectId}` : "-")}</b>
+              <b>
+                {projectsMap[tx.projectId] ||
+                  (tx.projectId ? `#${tx.projectId}` : "-")}
+              </b>
             </div>
 
             <div>
               <span className="text-zinc-600">از:</span>{" "}
-              <b>{personsMap[tx.fromPersonId] || (tx.fromPersonId ? `#${tx.fromPersonId}` : "-")}</b>
+              <b>
+                {personsMap[tx.fromPersonId] ||
+                  (tx.fromPersonId ? `#${tx.fromPersonId}` : "-")}
+              </b>
             </div>
             <div>
               <span className="text-zinc-600">به:</span>{" "}
-              <b>{personsMap[tx.toPersonId] || (tx.toPersonId ? `#${tx.toPersonId}` : "-")}</b>
+              <b>
+                {personsMap[tx.toPersonId] ||
+                  (tx.toPersonId ? `#${tx.toPersonId}` : "-")}
+              </b>
             </div>
 
             <div>
-              <span className="text-zinc-600">سررسید:</span> <b>{tx.dateDue || "-"}</b>
+              <span className="text-zinc-600">سررسید:</span>{" "}
+              <b>{tx.dateDue || "-"}</b>
             </div>
             <div>
-              <span className="text-zinc-600">ثبت:</span> <b>{dateFa(tx.dateRegistered)}</b>
+              <span className="text-zinc-600">ثبت:</span>{" "}
+              <b>{dateFa(tx.dateRegistered)}</b>
             </div>
 
             <div>
-              <span className="text-zinc-600">نوع پرداخت:</span> <b>{paymentTypeLabel(tx.paymentType)}</b>
+              <span className="text-zinc-600">نوع پرداخت:</span>{" "}
+              <b>{paymentTypeLabel(tx.paymentType)}</b>
             </div>
             <div>
-              <span className="text-zinc-600">نوع تراکنش:</span> <b>{transactionTypeLabel(tx.transactionType)}</b>
+              <span className="text-zinc-600">نوع تراکنش:</span>{" "}
+              <b>{transactionTypeLabel(tx.transactionType)}</b>
             </div>
 
             <div className="md:col-span-2">
-              <span className="text-zinc-600">توضیحات:</span> <b>{tx.dsc || "-"}</b>
+              <span className="text-zinc-600">توضیحات:</span>{" "}
+              <b>{tx.dsc || "-"}</b>
             </div>
 
             <div className="md:col-span-2 border-t pt-2">
-              <span className="text-zinc-600">مبلغ:</span> <b>{moneyFa(tx.amountPaid)}</b>{" "}
+              <span className="text-zinc-600">مبلغ:</span>{" "}
+              <b>{moneyFa(tx.amountPaid)}</b>{" "}
               <span className="text-zinc-400">|</span>{" "}
-              <span className="text-zinc-600">تخصیص:</span> <b>{moneyFa(tx.allocatedAmount)}</b>{" "}
+              <span className="text-zinc-600">تخصیص:</span>{" "}
+              <b>{moneyFa(tx.allocatedAmount)}</b>{" "}
               <span className="text-zinc-400">|</span>{" "}
               <span className="text-zinc-600">مانده:</span>{" "}
               <b className="text-emerald-700">{moneyFa(tx.remainingAmount)}</b>
@@ -392,28 +445,53 @@ export default function TransactionAllocationsPage() {
               <input
                 className="w-full rounded-xl border px-3 py-2 text-sm bg-zinc-50"
                 value={selectedDebt ? debtLabel(selectedDebt) : ""}
-                placeholder={candidatesLoading ? "در حال بارگذاری..." : "انتخاب کنید..."}
+                placeholder={
+                  candidatesLoading ? "در حال بارگذاری..." : "انتخاب کنید..."
+                }
                 readOnly
               />
-              <Button variant="secondary" onClick={() => setDebtLookupOpen(true)} disabled={candidatesLoading}>
+              <Button
+                variant="secondary"
+                onClick={() => setDebtLookupOpen(true)}
+                disabled={candidatesLoading}
+              >
                 انتخاب
               </Button>
-              <Button variant="secondary" onClick={() => setDebtId(null)} disabled={!debtId}>
+              <Button
+                variant="secondary"
+                onClick={() => setDebtId(null)}
+                disabled={!debtId}
+              >
                 پاک
               </Button>
             </div>
-            <div className="text-xs text-zinc-500 mt-1">تعداد گزینه‌ها: {debtCandidates.length}</div>
+            <div className="text-xs text-zinc-500 mt-1">
+              تعداد گزینه‌ها: {debtCandidates.length}
+            </div>
           </div>
 
-          <Input label="مبلغ" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} />
-          <Input label="توضیحات" value={dsc} onChange={(e) => setDsc(e.target.value)} placeholder="اختیاری" />
+          <Input
+            label="مبلغ"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            min={0}
+          />
+          <Input
+            label="توضیحات"
+            value={dsc}
+            onChange={(e) => setDsc(e.target.value)}
+            placeholder="اختیاری"
+          />
 
           <div className="flex items-end">
             <Button onClick={handleCreate}>ثبت</Button>
           </div>
         </div>
 
-        <div className="text-xs text-zinc-500 mt-2">مانده قابل تخصیص تراکنش: {moneyFa(tx?.remainingAmount)}</div>
+        <div className="text-xs text-zinc-500 mt-2">
+          مانده قابل تخصیص تراکنش: {moneyFa(tx?.remainingAmount)}
+        </div>
       </div>
 
       {/* List */}
@@ -440,18 +518,33 @@ export default function TransactionAllocationsPage() {
                   const d = debtMap[r.debtId ?? r.debtHeaderId];
                   return (
                     <tr key={r.id} className="border-b last:border-b-0">
-                      <td className="py-2 font-semibold">{d?.personTitle || `#${r.debtId ?? r.debtHeaderId}`}</td>
-                      <td className="py-2 font-semibold">{moneyFa(r.coveredAmount)}</td>
+                      <td className="py-2 font-semibold">
+                        {d?.personTitle || `#${r.debtId ?? r.debtHeaderId}`}
+                      </td>
+                      <td className="py-2 font-semibold">
+                        {moneyFa(r.coveredAmount)}
+                      </td>
                       <td className="py-2">{r.dsc || "-"}</td>
                       <td className="py-2">
                         <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => navigate(`/debts/${r.debtHeaderId}/allocations`)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => openDebtInNewTab(r.debtHeaderId)}
+                            title="مشاهده بدهی در لیست بدهی‌ها"
+                          >
                             مشاهده بدهی
                           </Button>
-                          <Button variant="secondary" onClick={() => openEdit(r)}>
+
+                          <Button
+                            variant="secondary"
+                            onClick={() => openEdit(r)}
+                          >
                             ویرایش
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteTarget(r.id)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteTarget(r.id)}
+                          >
                             حذف
                           </Button>
                         </div>
@@ -517,17 +610,34 @@ export default function TransactionAllocationsPage() {
                 placeholder="انتخاب کنید..."
                 readOnly
               />
-              <Button variant="secondary" onClick={() => setEditDebtLookupOpen(true)}>
+              <Button
+                variant="secondary"
+                onClick={() => setEditDebtLookupOpen(true)}
+              >
                 انتخاب
               </Button>
-              <Button variant="secondary" onClick={() => setEditDebtId(null)} disabled={!editDebtId}>
+              <Button
+                variant="secondary"
+                onClick={() => setEditDebtId(null)}
+                disabled={!editDebtId}
+              >
                 پاک
               </Button>
             </div>
           </div>
 
-          <Input label="مبلغ تخصیص" type="number" value={editAmount} onChange={(e) => setEditAmount(e.target.value)} />
-          <Input label="توضیحات" value={editDsc} onChange={(e) => setEditDsc(e.target.value)} placeholder="اختیاری" />
+          <Input
+            label="مبلغ تخصیص"
+            type="number"
+            value={editAmount}
+            onChange={(e) => setEditAmount(e.target.value)}
+          />
+          <Input
+            label="توضیحات"
+            value={editDsc}
+            onChange={(e) => setEditDsc(e.target.value)}
+            placeholder="اختیاری"
+          />
         </div>
       </Modal>
 

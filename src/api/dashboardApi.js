@@ -75,3 +75,12 @@ export async function getItemsByCategory({ itemCategoryId, from, to, limit = 50 
   });
   return res.data;
 }
+
+
+export async function getDebtAgingByPerson({ from, to, asOf, limit = 50 }) {
+  const res = await api.get("/api/v1/dashboard/debt-aging/persons", {
+    params: { from, to, asOf, limit },
+  });
+  return res.data;
+}
+

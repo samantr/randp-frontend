@@ -40,7 +40,8 @@ function bytesLabel(n) {
 
 function extractFilenameFromHeader(contentDisposition) {
   if (!contentDisposition) return null;
-  const m = /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(contentDisposition);
+  const m =
+    /filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i.exec(contentDisposition);
   if (!m) return null;
   return decodeURIComponent(m[1] || m[2] || "").trim() || null;
 }
@@ -122,9 +123,19 @@ export default function DocumentsPage({ ownerType }) {
   const cfg = useMemo(() => getOwnerConfig(ownerType), [ownerType]);
   const ownerId = Number(params[cfg.paramKey]);
 
+  // ✅ FIX: if return is not provided, go back in history (preserves filters/sort on list page)
   const onBack = () => {
-    if (returnTo) navigate(decodeURIComponent(returnTo));
-    else navigate(cfg.backTo);
+    if (returnTo) {
+      try {
+        navigate(decodeURIComponent(returnTo));
+        return;
+      } catch {
+        // if decoding failed, fall back to history
+      }
+    }
+
+    // Prefer history back (works like allocations page)
+    navigate(-1);
   };
 
   const [loading, setLoading] = useState(false);
@@ -192,7 +203,8 @@ export default function DocumentsPage({ ownerType }) {
 
     try {
       const projectsRes = await getProjects({ page: 0, size: 5000, q: "" });
-      const projects = normalizePageLike(projectsRes).content || projectsRes || [];
+      const projects =
+        normalizePageLike(projectsRes).content || projectsRes || [];
       const pr = {};
       for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
       setProjectsMap(pr);
@@ -217,7 +229,14 @@ export default function DocumentsPage({ ownerType }) {
         setDebtView(null);
       }
     } catch (e) {
-      toast.error(getApiErrorMessage(e, ownerType === "debt" ? "خطا در دریافت اطلاعات بدهی" : "خطا در دریافت اطلاعات تراکنش"));
+      toast.error(
+        getApiErrorMessage(
+          e,
+          ownerType === "debt"
+            ? "خطا در دریافت اطلاعات بدهی"
+            : "خطا در دریافت اطلاعات تراکنش"
+        )
+      );
       setDebtView(null);
       setTx(null);
     } finally {
@@ -255,7 +274,8 @@ export default function DocumentsPage({ ownerType }) {
     if (!ownerId) return;
 
     if (!file) return toast.error("لطفاً فایل را انتخاب کنید");
-    if (file.size > MAX_FILE_BYTES) return toast.error(`حداکثر حجم فایل ${MAX_FILE_MB} مگابایت است.`);
+    if (file.size > MAX_FILE_BYTES)
+      return toast.error(`حداکثر حجم فایل ${MAX_FILE_MB} مگابایت است.`);
 
     setUploading(true);
     try {
@@ -276,7 +296,9 @@ export default function DocumentsPage({ ownerType }) {
       try {
         const res = await cfg.download(docId);
         const blob = res.data;
-        const headerName = extractFilenameFromHeader(res.headers?.["content-disposition"]);
+        const headerName = extractFilenameFromHeader(
+          res.headers?.["content-disposition"]
+        );
         const name = headerName || fallbackName || `document_${docId}`;
 
         const url = window.URL.createObjectURL(blob);
@@ -356,27 +378,48 @@ export default function DocumentsPage({ ownerType }) {
     if (ownerType === "debt") {
       if (!debtHeader) return null;
 
-      const projectTitle = debtHeader.projectId ? projectsMap[debtHeader.projectId] || `#${debtHeader.projectId}` : "-";
-      const personName = debtHeader.personId ? personsMap[debtHeader.personId] || `#${debtHeader.personId}` : "-";
+      const projectTitle = debtHeader.projectId
+        ? projectsMap[debtHeader.projectId] || `#${debtHeader.projectId}`
+        : "-";
+      const personName = debtHeader.personId
+        ? personsMap[debtHeader.personId] || `#${debtHeader.personId}`
+        : "-";
 
       return (
         <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 rounded-xl bg-zinc-50 p-3 text-sm">
-          <div><span className="text-zinc-600">پروژه:</span> <b>{projectTitle}</b></div>
-          <div><span className="text-zinc-600">شخص/سازمان:</span> <b>{personName}</b></div>
-          <div><span className="text-zinc-600">تاریخ ثبت:</span> <b>{dateFa(debtHeader.dateRegistered)}</b></div>
-          <div><span className="text-zinc-600">سررسید:</span> <b>{String(debtHeader.dateDue || "-")}</b></div>
+          <div>
+            <span className="text-zinc-600">پروژه:</span>{" "}
+            <b>{projectTitle}</b>
+          </div>
+          <div>
+            <span className="text-zinc-600">شخص/سازمان:</span>{" "}
+            <b>{personName}</b>
+          </div>
+          <div>
+            <span className="text-zinc-600">تاریخ ثبت:</span>{" "}
+            <b>{dateFa(debtHeader.dateRegistered)}</b>
+          </div>
+          <div>
+            <span className="text-zinc-600">سررسید:</span>{" "}
+            <b>{String(debtHeader.dateDue || "-")}</b>
+          </div>
 
           <div className="md:col-span-2">
-            <span className="text-zinc-600">توضیحات:</span> <b>{debtHeader.dsc || "-"}</b>
+            <span className="text-zinc-600">توضیحات:</span>{" "}
+            <b>{debtHeader.dsc || "-"}</b>
           </div>
 
           <div className="md:col-span-2 border-t pt-2">
-            <span className="text-zinc-600">جمع:</span> <b>{moneyFa(debtView?.totalAmount)}</b>{" "}
+            <span className="text-zinc-600">جمع:</span>{" "}
+            <b>{moneyFa(debtView?.totalAmount)}</b>{" "}
             <span className="text-zinc-400">|</span>{" "}
-            <span className="text-zinc-600">تخصیص:</span> <b>{moneyFa(debtView?.coveredAmount)}</b>{" "}
+            <span className="text-zinc-600">تخصیص:</span>{" "}
+            <b>{moneyFa(debtView?.coveredAmount)}</b>{" "}
             <span className="text-zinc-400">|</span>{" "}
             <span className="text-zinc-600">مانده:</span>{" "}
-            <b className="text-emerald-700">{moneyFa(debtView?.remainingAmount)}</b>
+            <b className="text-emerald-700">
+              {moneyFa(debtView?.remainingAmount)}
+            </b>
           </div>
         </div>
       );
@@ -385,21 +428,49 @@ export default function DocumentsPage({ ownerType }) {
     // transaction header
     if (!tx) return null;
 
-    const projectTitle = tx.projectId ? projectsMap[tx.projectId] || `#${tx.projectId}` : "-";
-    const personName = tx.personId ? personsMap[tx.personId] || `#${tx.personId}` : "-";
+    const projectTitle = tx.projectId
+      ? projectsMap[tx.projectId] || `#${tx.projectId}`
+      : "-";
+    const personName = tx.personId
+      ? personsMap[tx.personId] || `#${tx.personId}`
+      : "-";
 
     return (
       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-2 rounded-xl bg-zinc-50 p-3 text-sm">
-        <div><span className="text-zinc-600">کد:</span> <b>{tx.code || `#${tx.id}`}</b></div>
-        <div><span className="text-zinc-600">تاریخ ثبت:</span> <b>{dateFa(tx.dateRegistered)}</b></div>
-        <div><span className="text-zinc-600">پروژه:</span> <b>{projectTitle}</b></div>
-        <div><span className="text-zinc-600">شخص/سازمان:</span> <b>{personName}</b></div>
+        <div>
+          <span className="text-zinc-600">کد:</span>{" "}
+          <b>{tx.code || `#${tx.id}`}</b>
+        </div>
+        <div>
+          <span className="text-zinc-600">تاریخ ثبت:</span>{" "}
+          <b>{dateFa(tx.dateRegistered)}</b>
+        </div>
+        <div>
+          <span className="text-zinc-600">پروژه:</span>{" "}
+          <b>{projectTitle}</b>
+        </div>
+        <div>
+          <span className="text-zinc-600">شخص/سازمان:</span>{" "}
+          <b>{personName}</b>
+        </div>
 
-        <div><span className="text-zinc-600">نوع:</span> <b>{transactionTypeLabel(tx.transactionType)}</b></div>
-        <div><span className="text-zinc-600">روش پرداخت:</span> <b>{paymentTypeLabel(tx.paymentType)}</b></div>
+        <div>
+          <span className="text-zinc-600">نوع:</span>{" "}
+          <b>{transactionTypeLabel(tx.transactionType)}</b>
+        </div>
+        <div>
+          <span className="text-zinc-600">روش پرداخت:</span>{" "}
+          <b>{paymentTypeLabel(tx.paymentType)}</b>
+        </div>
 
-        <div><span className="text-zinc-600">مبلغ:</span> <b>{moneyFa(tx.amountPaid)}</b></div>
-        <div><span className="text-zinc-600">توضیحات:</span> <b>{tx.dsc || "-"}</b></div>
+        <div>
+          <span className="text-zinc-600">مبلغ:</span>{" "}
+          <b>{moneyFa(tx.amountPaid)}</b>
+        </div>
+        <div>
+          <span className="text-zinc-600">توضیحات:</span>{" "}
+          <b>{tx.dsc || "-"}</b>
+        </div>
       </div>
     );
   }, [ownerType, debtHeader, debtView, tx, personsMap, projectsMap]);
@@ -421,7 +492,9 @@ export default function DocumentsPage({ ownerType }) {
         </div>
 
         {lookupsLoading || headerLoading ? (
-          <div className="text-sm text-zinc-500 mt-3">در حال بارگذاری اطلاعات...</div>
+          <div className="text-sm text-zinc-500 mt-3">
+            در حال بارگذاری اطلاعات...
+          </div>
         ) : (
           headerBox
         )}
@@ -446,7 +519,11 @@ export default function DocumentsPage({ ownerType }) {
             />
 
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={clearSelectedFile} disabled={!file}>
+              <Button
+                variant="secondary"
+                onClick={clearSelectedFile}
+                disabled={!file}
+              >
                 پاک
               </Button>
               <Button onClick={onUpload} disabled={uploading || !file}>
@@ -465,10 +542,14 @@ export default function DocumentsPage({ ownerType }) {
             <div className="md:col-span-2 text-xs text-zinc-500 flex items-end">
               {file ? (
                 <>
-                  فایل انتخاب شده: <b className="mx-1">{file.name}</b> ({bytesLabel(file.size)})
+                  فایل انتخاب شده: <b className="mx-1">{file.name}</b> (
+                  {bytesLabel(file.size)})
                 </>
               ) : (
-                <>حداکثر حجم فایل: {MAX_FILE_MB}MB — همچنین می‌توانید Drag & Drop کنید.</>
+                <>
+                  حداکثر حجم فایل: {MAX_FILE_MB}MB — همچنین می‌توانید Drag &
+                  Drop کنید.
+                </>
               )}
             </div>
           </div>
@@ -501,23 +582,34 @@ export default function DocumentsPage({ ownerType }) {
                   const type = canPreview(r.contentType, r.fileName);
                   return (
                     <tr key={r.id} className="border-b last:border-b-0">
-                      <td className="py-2 font-semibold">{r.fileName || `#${r.id}`}</td>
+                      <td className="py-2 font-semibold">
+                        {r.fileName || `#${r.id}`}
+                      </td>
                       <td className="py-2">{r.contentType || "-"}</td>
                       <td className="py-2">{bytesLabel(r.fileSize)}</td>
                       <td className="py-2">{r.dsc || "-"}</td>
                       <td className="py-2">
                         <div className="flex gap-2">
                           {type ? (
-                            <Button variant="secondary" onClick={() => onOpenPreview(r)}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => onOpenPreview(r)}
+                            >
                               پیش‌نمایش
                             </Button>
                           ) : null}
 
-                          <Button variant="secondary" onClick={() => onDownload(r.id, r.fileName)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => onDownload(r.id, r.fileName)}
+                          >
                             دانلود
                           </Button>
 
-                          <Button variant="danger" onClick={() => setDeleteTarget(r)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteTarget(r)}
+                          >
                             حذف
                           </Button>
                         </div>
@@ -552,9 +644,17 @@ export default function DocumentsPage({ ownerType }) {
         }
       >
         {!preview ? null : preview.type === "image" ? (
-          <img src={preview.url} alt={preview.title} className="max-h-[75vh] w-full object-contain rounded-xl" />
+          <img
+            src={preview.url}
+            alt={preview.title}
+            className="max-h-[75vh] w-full object-contain rounded-xl"
+          />
         ) : (
-          <iframe title="pdf" src={preview.url} className="w-full h-[75vh] rounded-xl border" />
+          <iframe
+            title="pdf"
+            src={preview.url}
+            className="w-full h-[75vh] rounded-xl border"
+          />
         )}
       </Modal>
     </div>

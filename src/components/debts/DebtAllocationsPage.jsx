@@ -18,6 +18,17 @@ import {
 } from "../../api/debtAllocationsApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
+function openTransactionInNewTab(tx) {
+  if (!tx?.code) return;
+
+  const params = new URLSearchParams();
+  params.set("cf_code", tx.code);
+  params.set("page", "0");
+
+  const url = `/transactions?${params.toString()}`;
+  window.open(url, "_blank", "noopener,noreferrer");
+}
+
 function moneyFa(v) {
   return Number(v || 0).toLocaleString("fa-IR");
 }
@@ -101,13 +112,35 @@ export default function DebtAllocationsPage() {
       {
         key: "code",
         title: "کد",
-        render: (r) => <span className="font-semibold">{r.code || `#${r.id}`}</span>,
+        render: (r) => (
+          <span className="font-semibold">{r.code || `#${r.id}`}</span>
+        ),
       },
-      { key: "dateRegistered", title: "ثبت", render: (r) => dateFa(r.dateRegistered) },
-      { key: "amountPaid", title: "مبلغ", render: (r) => moneyFa(r.amountPaid) },
-      { key: "allocatedAmount", title: "تخصیص", render: (r) => moneyFa(r.allocatedAmount) },
-      { key: "remainingAmount", title: "مانده", render: (r) => moneyFa(r.remainingAmount) },
-      { key: "editableRemainingAmount", title: "قابل‌ویرایش", render: (r) => moneyFa(r.editableRemainingAmount) },
+      {
+        key: "dateRegistered",
+        title: "ثبت",
+        render: (r) => dateFa(r.dateRegistered),
+      },
+      {
+        key: "amountPaid",
+        title: "مبلغ",
+        render: (r) => moneyFa(r.amountPaid),
+      },
+      {
+        key: "allocatedAmount",
+        title: "تخصیص",
+        render: (r) => moneyFa(r.allocatedAmount),
+      },
+      {
+        key: "remainingAmount",
+        title: "مانده",
+        render: (r) => moneyFa(r.remainingAmount),
+      },
+      {
+        key: "editableRemainingAmount",
+        title: "قابل‌ویرایش",
+        render: (r) => moneyFa(r.editableRemainingAmount),
+      },
     ],
     []
   );
@@ -195,14 +228,18 @@ export default function DebtAllocationsPage() {
     setEditDsc(row.dsc || "");
 
     try {
-      const data = await listTransactionCandidatesForDebt(debtId, { allocationId: row.id });
+      const data = await listTransactionCandidatesForDebt(debtId, {
+        allocationId: row.id,
+      });
       setEditTxCandidates(Array.isArray(data) ? data : []);
     } catch {
       setEditTxCandidates([]);
     }
   }
 
-  const selectedEditTx = editTransactionId ? editTxMap[Number(editTransactionId)] : null;
+  const selectedEditTx = editTransactionId
+    ? editTxMap[Number(editTransactionId)]
+    : null;
 
   async function handleUpdate() {
     if (!editing?.id) return;
@@ -259,12 +296,16 @@ export default function DebtAllocationsPage() {
           <div className="mt-3 space-y-2">
             <div className="grid grid-cols-1 gap-2 rounded-xl bg-zinc-50 p-3 text-sm md:grid-cols-2">
               <div className="md:col-span-2 border-t pt-2">
-                <span className="text-zinc-600">جمع:</span> <b>{moneyFa(debtView.totalAmount)}</b>{" "}
+                <span className="text-zinc-600">جمع:</span>{" "}
+                <b>{moneyFa(debtView.totalAmount)}</b>{" "}
                 <span className="text-zinc-400">|</span>{" "}
-                <span className="text-zinc-600">تخصیص:</span> <b>{moneyFa(debtView.coveredAmount)}</b>{" "}
+                <span className="text-zinc-600">تخصیص:</span>{" "}
+                <b>{moneyFa(debtView.coveredAmount)}</b>{" "}
                 <span className="text-zinc-400">|</span>{" "}
                 <span className="text-zinc-600">مانده:</span>{" "}
-                <b className="text-emerald-700">{moneyFa(debtView.remainingAmount)}</b>
+                <b className="text-emerald-700">
+                  {moneyFa(debtView.remainingAmount)}
+                </b>
               </div>
             </div>
           </div>
@@ -282,28 +323,53 @@ export default function DebtAllocationsPage() {
               <input
                 className="w-full rounded-xl border px-3 py-2 text-sm bg-zinc-50"
                 value={selectedTx ? txLabel(selectedTx) : ""}
-                placeholder={candidatesLoading ? "در حال بارگذاری..." : "انتخاب کنید..."}
+                placeholder={
+                  candidatesLoading ? "در حال بارگذاری..." : "انتخاب کنید..."
+                }
                 readOnly
               />
-              <Button variant="secondary" onClick={() => setTxLookupOpen(true)} disabled={candidatesLoading}>
+              <Button
+                variant="secondary"
+                onClick={() => setTxLookupOpen(true)}
+                disabled={candidatesLoading}
+              >
                 انتخاب
               </Button>
-              <Button variant="secondary" onClick={() => setTransactionId(null)} disabled={!transactionId}>
+              <Button
+                variant="secondary"
+                onClick={() => setTransactionId(null)}
+                disabled={!transactionId}
+              >
                 پاک
               </Button>
             </div>
-            <div className="text-xs text-zinc-500 mt-1">تعداد گزینه‌ها: {txCandidates.length}</div>
+            <div className="text-xs text-zinc-500 mt-1">
+              تعداد گزینه‌ها: {txCandidates.length}
+            </div>
           </div>
 
-          <Input label="مبلغ" type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={0} />
-          <Input label="توضیحات" value={dsc} onChange={(e) => setDsc(e.target.value)} placeholder="اختیاری" />
+          <Input
+            label="مبلغ"
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            min={0}
+          />
+          <Input
+            label="توضیحات"
+            value={dsc}
+            onChange={(e) => setDsc(e.target.value)}
+            placeholder="اختیاری"
+          />
 
           <div className="flex items-end">
             <Button onClick={handleCreate}>ثبت</Button>
           </div>
         </div>
 
-        <div className="text-xs text-zinc-500 mt-2">مانده قابل تخصیص بدهی: {moneyFa(remainingDebt)}</div>
+        <div className="text-xs text-zinc-500 mt-2">
+          مانده قابل تخصیص بدهی: {moneyFa(remainingDebt)}
+        </div>
       </div>
 
       {/* List */}
@@ -333,17 +399,39 @@ export default function DebtAllocationsPage() {
                   const tx = txMap[r.transactionId];
                   return (
                     <tr key={r.id} className="border-b last:border-b-0">
-                      <td className="py-2 font-semibold">{tx?.code || `#${r.transactionId}`}</td>
+                      <td className="py-2 font-semibold">
+                        {tx?.code || `#${r.transactionId}`}
+                      </td>
                       <td className="py-2">{dateFa(tx?.dateRegistered)}</td>
-                      <td className="py-2">{tx ? moneyFa(tx.amountPaid) : "-"}</td>
-                      <td className="py-2 font-semibold">{moneyFa(r.coveredAmount)}</td>
+                      <td className="py-2">
+                        {tx ? moneyFa(tx.amountPaid) : "-"}
+                      </td>
+                      <td className="py-2 font-semibold">
+                        {moneyFa(r.coveredAmount)}
+                      </td>
                       <td className="py-2">{r.dsc || "-"}</td>
                       <td className="py-2">
-                        <div className="flex gap-2">
-                          <Button variant="secondary" onClick={() => openEdit(r)}>
+                        <div className="flex gap-2 flex-wrap">
+                          <Button
+                            variant="secondary"
+                            onClick={() => openTransactionInNewTab(tx)}
+                            disabled={!tx}
+                            title="مشاهده در لیست تراکنش‌ها"
+                          >
+                            مشاهده تراکنش
+                          </Button>
+
+                          <Button
+                            variant="secondary"
+                            onClick={() => openEdit(r)}
+                          >
                             ویرایش
                           </Button>
-                          <Button variant="danger" onClick={() => setDeleteTarget(r.id)}>
+
+                          <Button
+                            variant="danger"
+                            onClick={() => setDeleteTarget(r.id)}
+                          >
                             حذف
                           </Button>
                         </div>
@@ -408,10 +496,17 @@ export default function DebtAllocationsPage() {
                 placeholder="انتخاب کنید..."
                 readOnly
               />
-              <Button variant="secondary" onClick={() => setEditTxLookupOpen(true)}>
+              <Button
+                variant="secondary"
+                onClick={() => setEditTxLookupOpen(true)}
+              >
                 انتخاب
               </Button>
-              <Button variant="secondary" onClick={() => setEditTransactionId(null)} disabled={!editTransactionId}>
+              <Button
+                variant="secondary"
+                onClick={() => setEditTransactionId(null)}
+                disabled={!editTransactionId}
+              >
                 پاک
               </Button>
             </div>
@@ -423,7 +518,12 @@ export default function DebtAllocationsPage() {
             value={editAmount}
             onChange={(e) => setEditAmount(e.target.value)}
           />
-          <Input label="توضیحات" value={editDsc} onChange={(e) => setEditDsc(e.target.value)} placeholder="اختیاری" />
+          <Input
+            label="توضیحات"
+            value={editDsc}
+            onChange={(e) => setEditDsc(e.target.value)}
+            placeholder="اختیاری"
+          />
         </div>
       </Modal>
 

@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import toast from "react-hot-toast";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
@@ -81,6 +87,7 @@ async function loadAllPaged(fetchPageFn, pageSize = 200, maxPages = 50) {
 // URL state helpers
 // --------------------
 const EMPTY_HF = {
+  debtId: "",
   project: "",
   person: "",
   dateDue: "",
@@ -263,7 +270,11 @@ export default function DebtsMasterDetailPage() {
       for (const [k, v] of currentSp.entries()) current[k] = v;
 
       if (shallowEqualObj(current, desired)) return;
-      if (lastPushedRef.current && shallowEqualObj(lastPushedRef.current, desired)) return;
+      if (
+        lastPushedRef.current &&
+        shallowEqualObj(lastPushedRef.current, desired)
+      )
+        return;
 
       lastPushedRef.current = desired;
       setSearchParams(desired, { replace: true });
@@ -272,7 +283,16 @@ export default function DebtsMasterDetailPage() {
     return () => {
       if (urlTimer.current) clearTimeout(urlTimer.current);
     };
-  }, [mode, pageIndex, sortBy, sortDir, selectedDebtId, hf, location.search, setSearchParams]);
+  }, [
+    mode,
+    pageIndex,
+    sortBy,
+    sortDir,
+    selectedDebtId,
+    hf,
+    location.search,
+    setSearchParams,
+  ]);
 
   function toggleSort(field) {
     // ✅ sorting should also show first row detail
@@ -311,7 +331,8 @@ export default function DebtsMasterDetailPage() {
         setProjectsMap(pMap);
 
         const peMap = new Map();
-        for (const pe of personsAll) peMap.set(pe.id, personTitle(pe) || `#${pe.id}`);
+        for (const pe of personsAll)
+          peMap.set(pe.id, personTitle(pe) || `#${pe.id}`);
         setPersonsMap(peMap);
       } catch {
         // ignore
@@ -332,7 +353,9 @@ export default function DebtsMasterDetailPage() {
     const nq = (q || "").trim();
     if (!nq) return persons;
     return persons.filter((x) =>
-      `${x?.name || ""} ${x?.lastName || ""} ${x?.companyName || ""}`.includes(nq)
+      `${x?.name || ""} ${x?.lastName || ""} ${x?.companyName || ""}`.includes(
+        nq
+      )
     );
   }, []);
 
@@ -381,6 +404,9 @@ export default function DebtsMasterDetailPage() {
     for (const k of HF_KEYS) f[k] = normalizeFaText(hf[k] || "");
 
     return (headers || []).filter((r) => {
+      const debtIdText = normalizeFaText(String(r.debt_id ?? ""));
+      if (f.debtId && !debtIdText.includes(f.debtId)) return false;
+
       const projectId = getAny(r, ["project_id", "projectId", "projectID"]);
       const personId = getAny(r, ["person_id", "personId", "personID"]);
 
@@ -429,6 +455,8 @@ export default function DebtsMasterDetailPage() {
     return [...(filteredHeaders || [])].sort((a, b) => {
       const getVal = (r) => {
         switch (sortBy) {
+          case "debtId":
+            return Number(r.debt_id || 0);
           case "project": {
             const id = getAny(r, ["project_id", "projectId", "projectID"]);
             return id ? projectsMap.get(id) || `#${id}` : "";
@@ -455,7 +483,8 @@ export default function DebtsMasterDetailPage() {
       const va = getVal(a);
       const vb = getVal(b);
 
-      if (typeof va === "number" && typeof vb === "number") return (va - vb) * dir;
+      if (typeof va === "number" && typeof vb === "number")
+        return (va - vb) * dir;
       return String(va).localeCompare(String(vb), "fa") * dir;
     });
   }, [filteredHeaders, sortBy, sortDir, projectsMap, personsMap]);
@@ -486,7 +515,8 @@ export default function DebtsMasterDetailPage() {
 
     const firstId = pagedHeaders[0]?.debt_id ?? null;
     const selectedExistsInPage =
-      selectedDebtId != null && pagedHeaders.some((x) => x.debt_id === selectedDebtId);
+      selectedDebtId != null &&
+      pagedHeaders.some((x) => x.debt_id === selectedDebtId);
 
     // always fix invalid selection
     if (!selectedExistsInPage) {
@@ -618,7 +648,9 @@ export default function DebtsMasterDetailPage() {
       const v = await getDebtView(debtId);
       const h = v?.header;
 
-      let proj = h?.projectId ? { id: h.projectId, title: `#${h.projectId}` } : null;
+      let proj = h?.projectId
+        ? { id: h.projectId, title: `#${h.projectId}` }
+        : null;
       let pers = h?.personId
         ? { id: h.personId, name: `#${h.personId}`, isLegal: false }
         : null;
@@ -674,21 +706,27 @@ export default function DebtsMasterDetailPage() {
     if (!headerPerson?.id) return toast.error("شخص/سازمان را انتخاب کنید");
     if (!dateRegistered) return toast.error("تاریخ ثبت را وارد کنید");
     if (!dateDue) return toast.error("تاریخ سررسید را وارد کنید");
-    if (!editLines || editLines.length === 0) return toast.error("حداقل یک ردیف اضافه کنید");
+    if (!editLines || editLines.length === 0)
+      return toast.error("حداقل یک ردیف اضافه کنید");
 
     for (const [i, l] of editLines.entries()) {
-      if (!l?.item?.id) return toast.error(`ردیف ${i + 1}: کالا/خدمت انتخاب نشده`);
+      if (!l?.item?.id)
+        return toast.error(`ردیف ${i + 1}: کالا/خدمت انتخاب نشده`);
       if (!l?.unit?.id) return toast.error(`ردیف ${i + 1}: واحد انتخاب نشده`);
 
       const qnt = Number(l.qnt);
       const price = Number(l.unitPrice);
-      if (!Number.isFinite(qnt) || qnt <= 0) return toast.error(`ردیف ${i + 1}: تعداد نامعتبر است`);
-      if (!Number.isFinite(price) || price < 0) return toast.error(`ردیف ${i + 1}: قیمت واحد نامعتبر است`);
+      if (!Number.isFinite(qnt) || qnt <= 0)
+        return toast.error(`ردیف ${i + 1}: تعداد نامعتبر است`);
+      if (!Number.isFinite(price) || price < 0)
+        return toast.error(`ردیف ${i + 1}: قیمت واحد نامعتبر است`);
     }
 
     const ids = editLines.map((l) => l.item.id);
     if (new Set(ids).size !== ids.length) {
-      return toast.error("هر کالا/خدمت فقط یک بار می‌تواند در خطوط بدهی ثبت شود");
+      return toast.error(
+        "هر کالا/خدمت فقط یک بار می‌تواند در خطوط بدهی ثبت شود"
+      );
     }
 
     const payload = {
@@ -720,7 +758,9 @@ export default function DebtsMasterDetailPage() {
       setMode("view");
       await loadHeaders();
     } catch (e) {
-      toast.error(getApiErrorMessage(e, isEdit ? "خطا در ویرایش" : "خطا در ثبت بدهی"));
+      toast.error(
+        getApiErrorMessage(e, isEdit ? "خطا در ویرایش" : "خطا در ثبت بدهی")
+      );
     } finally {
       setSaving(false);
     }
@@ -733,7 +773,9 @@ export default function DebtsMasterDetailPage() {
       setDeleteId(null);
       await loadHeaders();
     } catch (e) {
-      toast.error(getApiErrorMessage(e, "حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)"));
+      toast.error(
+        getApiErrorMessage(e, "حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)")
+      );
     }
   }
 
@@ -750,13 +792,20 @@ export default function DebtsMasterDetailPage() {
           <div className="flex items-center justify-between gap-2 mb-2 text-sm">
             <div className="text-zinc-600">
               نمایش{" "}
-              <b>{pagedHeaders.length === 0 ? 0 : pageIndex * PAGE_SIZE + 1}</b> تا{" "}
-              <b>{Math.min((pageIndex + 1) * PAGE_SIZE, sortedHeaders.length)}</b> از{" "}
-              <b>{sortedHeaders.length}</b>
+              <b>{pagedHeaders.length === 0 ? 0 : pageIndex * PAGE_SIZE + 1}</b>{" "}
+              تا{" "}
+              <b>
+                {Math.min((pageIndex + 1) * PAGE_SIZE, sortedHeaders.length)}
+              </b>{" "}
+              از <b>{sortedHeaders.length}</b>
             </div>
 
             <div className="flex items-center gap-2">
-              <Button variant="secondary" onClick={goPrevPage} disabled={pageIndex === 0}>
+              <Button
+                variant="secondary"
+                onClick={goPrevPage}
+                disabled={pageIndex === 0}
+              >
                 قبلی
               </Button>
 
@@ -778,6 +827,14 @@ export default function DebtsMasterDetailPage() {
             <table className="w-full text-sm">
               <thead className="text-zinc-600">
                 <tr className="border-b">
+                  <th className="py-2 text-right">
+                    <SortButton
+                      label="ID"
+                      active={sortBy === "debtId"}
+                      dir={sortDir}
+                      onClick={() => toggleSort("debtId")}
+                    />
+                  </th>
                   <th className="py-2 text-right">
                     <SortButton
                       label="پروژه"
@@ -839,19 +896,43 @@ export default function DebtsMasterDetailPage() {
                 </tr>
 
                 <tr className="border-b bg-zinc-50">
-                  {["project", "person", "dateDue", "total", "covered", "remaining", "dsc"].map((k) => (
+                  {/* ID filter */}
+                  <th className="py-2">
+                    <input
+                      className="w-full rounded-lg border border-zinc-200 px-2 py-2"
+                      placeholder="فیلتر ID..."
+                      value={hf.debtId ?? ""}
+                      onChange={(e) => {
+                        autoPickFirstRef.current = true;
+                        setHf((p) => ({ ...p, debtId: e.target.value }));
+                      }}
+                    />
+                  </th>
+
+                  {/* other filters */}
+                  {[
+                    "project",
+                    "person",
+                    "dateDue",
+                    "total",
+                    "covered",
+                    "remaining",
+                    "dsc",
+                  ].map((k) => (
                     <th key={k} className="py-2">
                       <input
                         className="w-full rounded-lg border border-zinc-200 px-2 py-2"
                         placeholder="فیلتر..."
-                        value={hf[k]}
+                        value={hf[k] ?? ""}
                         onChange={(e) => {
-                          autoPickFirstRef.current = true; // ✅ filters should pick first
+                          autoPickFirstRef.current = true;
                           setHf((p) => ({ ...p, [k]: e.target.value }));
                         }}
                       />
                     </th>
                   ))}
+
+                  {/* وضعیت + عملیات (no filters) */}
                   <th />
                   <th />
                 </tr>
@@ -860,23 +941,35 @@ export default function DebtsMasterDetailPage() {
               <tbody>
                 {loadingHeaders ? (
                   <tr>
-                    <td className="py-3 text-zinc-500" colSpan={9}>
+                    <td className="py-3 text-zinc-500" colSpan={10}>
                       در حال بارگذاری...
                     </td>
                   </tr>
                 ) : pagedHeaders.length === 0 ? (
                   <tr>
-                    <td className="py-3 text-zinc-500" colSpan={9}>
+                    <td className="py-3 text-zinc-500" colSpan={10}>
                       موردی یافت نشد.
                     </td>
                   </tr>
                 ) : (
                   pagedHeaders.map((r) => {
-                    const projectId = getAny(r, ["project_id", "projectId", "projectID"]);
-                    const personId = getAny(r, ["person_id", "personId", "personID"]);
+                    const projectId = getAny(r, [
+                      "project_id",
+                      "projectId",
+                      "projectID",
+                    ]);
+                    const personId = getAny(r, [
+                      "person_id",
+                      "personId",
+                      "personID",
+                    ]);
 
-                    const projectTitle = projectId ? projectsMap.get(projectId) || `#${projectId}` : "-";
-                    const personName = personId ? personsMap.get(personId) || `#${personId}` : "-";
+                    const projectTitle = projectId
+                      ? projectsMap.get(projectId) || `#${projectId}`
+                      : "-";
+                    const personName = personId
+                      ? personsMap.get(personId) || `#${personId}`
+                      : "-";
 
                     const remaining = Number(r.remaining_amount || 0);
 
@@ -892,30 +985,48 @@ export default function DebtsMasterDetailPage() {
                           setSelectedDebtId(r.debt_id);
                         }}
                       >
+                        <td className="py-2 text-zinc-500 font-mono">
+                          {r.debt_id}
+                        </td>
+
                         <td className="py-2">{projectTitle}</td>
                         <td className="py-2">{personName}</td>
                         <td className="py-2">{r.date_due}</td>
                         <td className="py-2">{moneyFa(r.total_amount)}</td>
                         <td className="py-2">{moneyFa(r.covered_amount)}</td>
-                        <td className="py-2 font-semibold">{moneyFa(remaining)}</td>
-                        <td className="py-2 max-w-[260px] truncate" title={r.dsc || ""}>
+                        <td className="py-2 font-semibold">
+                          {moneyFa(remaining)}
+                        </td>
+                        <td
+                          className="py-2 max-w-[260px] truncate"
+                          title={r.dsc || ""}
+                        >
                           {r.dsc || "-"}
                         </td>
 
                         <td className="py-2">
                           {remaining > 0 ? (
-                            <span className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs">باز</span>
+                            <span className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-xs">
+                              باز
+                            </span>
                           ) : (
-                            <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs">تسویه</span>
+                            <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-xs">
+                              تسویه
+                            </span>
                           )}
                         </td>
 
                         <td className="py-2">
-                          <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
+                          <div
+                            className="flex gap-2"
+                            onClick={(e) => e.stopPropagation()}
+                          >
                             <Button
                               variant="secondary"
                               onClick={() =>
-                                navigate(`/debts/${r.debt_id}/allocations?return=${returnTo}`)
+                                navigate(
+                                  `/debts/${r.debt_id}/allocations?return=${returnTo}`
+                                )
                               }
                             >
                               تخصیص‌ها
@@ -924,17 +1035,25 @@ export default function DebtsMasterDetailPage() {
                             <Button
                               variant="secondary"
                               onClick={() =>
-                                navigate(`/debts/${r.debt_id}/documents?return=${returnTo}`)
+                                navigate(
+                                  `/debts/${r.debt_id}/documents?return=${returnTo}`
+                                )
                               }
                             >
                               پیوست‌ها
                             </Button>
 
-                            <Button variant="secondary" onClick={() => startEdit(r.debt_id)}>
+                            <Button
+                              variant="secondary"
+                              onClick={() => startEdit(r.debt_id)}
+                            >
                               ویرایش
                             </Button>
 
-                            <Button variant="danger" onClick={() => setDeleteId(r.debt_id)}>
+                            <Button
+                              variant="danger"
+                              onClick={() => setDeleteId(r.debt_id)}
+                            >
                               حذف
                             </Button>
                           </div>
@@ -954,11 +1073,17 @@ export default function DebtsMasterDetailPage() {
         <div className="rounded-2xl border bg-white p-3">
           <div className="flex items-center justify-between mb-3">
             <div className="font-bold text-lg">
-              {mode === "edit" && selectedDebtId ? `ویرایش بدهی #${selectedDebtId}` : "ثبت بدهی جدید"}
+              {mode === "edit" && selectedDebtId
+                ? `ویرایش بدهی #${selectedDebtId}`
+                : "ثبت بدهی جدید"}
             </div>
 
             <div className="flex gap-2">
-              <Button variant="secondary" onClick={cancelEditCreate} disabled={saving}>
+              <Button
+                variant="secondary"
+                onClick={cancelEditCreate}
+                disabled={saving}
+              >
                 انصراف
               </Button>
               <Button onClick={saveDebt} disabled={saving}>
@@ -1069,7 +1194,9 @@ export default function DebtsMasterDetailPage() {
                         <td className="py-2">{l.unitTitle}</td>
                         <td className="py-2">{String(l.qnt)}</td>
                         <td className="py-2">{moneyFa(l.unitPrice)}</td>
-                        <td className="py-2 font-semibold">{moneyFa(l.lineTotal)}</td>
+                        <td className="py-2 font-semibold">
+                          {moneyFa(l.lineTotal)}
+                        </td>
                         <td className="py-2">{l.dsc || "-"}</td>
                       </tr>
                     ))
@@ -1102,10 +1229,14 @@ export default function DebtsMasterDetailPage() {
                   </tr>
                 ) : (
                   editLines.map((l, idx) => {
-                    const lineTotal = Number(l.qnt || 0) * Number(l.unitPrice || 0);
+                    const lineTotal =
+                      Number(l.qnt || 0) * Number(l.unitPrice || 0);
 
                     return (
-                      <tr key={idx} className="border-b last:border-b-0 align-top">
+                      <tr
+                        key={idx}
+                        className="border-b last:border-b-0 align-top"
+                      >
                         <td className="py-2 min-w-[260px]">
                           <LookupSelect
                             label={null}
@@ -1133,7 +1264,9 @@ export default function DebtsMasterDetailPage() {
                             type="number"
                             className="w-full rounded-xl border border-zinc-200 px-2 py-2"
                             value={l.qnt}
-                            onChange={(e) => updateLine(idx, { qnt: e.target.value })}
+                            onChange={(e) =>
+                              updateLine(idx, { qnt: e.target.value })
+                            }
                             min={0}
                           />
                         </td>
@@ -1143,30 +1276,42 @@ export default function DebtsMasterDetailPage() {
                             type="number"
                             className="w-full rounded-xl border border-zinc-200 px-2 py-2"
                             value={l.unitPrice}
-                            onChange={(e) => updateLine(idx, { unitPrice: e.target.value })}
+                            onChange={(e) =>
+                              updateLine(idx, { unitPrice: e.target.value })
+                            }
                             min={0}
                           />
                         </td>
 
-                        <td className="py-2 min-w-[140px] font-semibold">{moneyFa(lineTotal)}</td>
+                        <td className="py-2 min-w-[140px] font-semibold">
+                          {moneyFa(lineTotal)}
+                        </td>
 
                         <td className="py-2 min-w-[200px]">
                           <input
                             className="w-full rounded-xl border border-zinc-200 px-2 py-2"
                             value={l.dsc || ""}
-                            onChange={(e) => updateLine(idx, { dsc: e.target.value })}
+                            onChange={(e) =>
+                              updateLine(idx, { dsc: e.target.value })
+                            }
                             placeholder="اختیاری"
                           />
                         </td>
 
                         <td className="py-2 min-w-[70px]">
-                          <Button variant="secondary" onClick={() => insertLineAfter(idx)}>
+                          <Button
+                            variant="secondary"
+                            onClick={() => insertLineAfter(idx)}
+                          >
                             +
                           </Button>
                         </td>
 
                         <td className="py-2 min-w-[90px]">
-                          <Button variant="danger" onClick={() => removeLine(idx)}>
+                          <Button
+                            variant="danger"
+                            onClick={() => removeLine(idx)}
+                          >
                             حذف
                           </Button>
                         </td>
