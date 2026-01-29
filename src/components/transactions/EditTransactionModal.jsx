@@ -9,8 +9,17 @@ import { updateTransaction } from "../../api/transactionsApi";
 import { searchPersons } from "../../api/personsApi";
 import { getProjects } from "../../api/projectsApi";
 
-// اگر مسیر فایل شما فرق دارد، این import را اصلاح کنید
 import QuickAddPersonModal from "../persons/QuickAddPersonModal";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+
+/* ======================
+   Jalali Date Picker (same as Dashboard)
+   ====================== */
+import DatePicker from "react-multi-date-picker";
+import DateObject from "react-date-object";
+import persian from "react-date-object/calendars/persian";
+import gregorian from "react-date-object/calendars/gregorian";
+import persian_fa from "react-date-object/locales/persian_fa";
 
 function normalizePageLike(data) {
   if (Array.isArray(data)) return { content: data, totalPages: 1 };
@@ -27,6 +36,57 @@ function nowLocalDateTimeForInput() {
   const hh = pad(d.getHours());
   const mi = pad(d.getMinutes());
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+}
+
+/* ======================
+   Digit normalization (FA/AR -> EN)
+   ====================== */
+function toLatinDigits(input) {
+  const s = String(input ?? "");
+  const fa = "۰۱۲۳۴۵۶۷۸۹";
+  const ar = "٠١٢٣٤٥٦٧٨٩";
+  let out = "";
+  for (const ch of s) {
+    const iFa = fa.indexOf(ch);
+    if (iFa >= 0) {
+      out += String(iFa);
+      continue;
+    }
+    const iAr = ar.indexOf(ch);
+    if (iAr >= 0) {
+      out += String(iAr);
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/* ======================
+   ISO <-> Jalali helpers
+   ====================== */
+function isoToPersianDateObject(iso) {
+  if (!iso) return null;
+  return new DateObject({
+    date: iso,
+    format: "YYYY-MM-DD",
+    calendar: gregorian,
+    locale: persian_fa,
+  }).convert(persian);
+}
+
+function persianValueToIso(value) {
+  if (!value) return "";
+  const g = new DateObject(value).convert(gregorian);
+  return toLatinDigits(g.format("YYYY-MM-DD"));
+}
+
+function setDatePartForDatetime(prevDatetime, isoDate) {
+  if (!isoDate) return prevDatetime || "";
+  const prev = String(prevDatetime || "");
+  const timePart = prev.includes("T") ? prev.split("T")[1] : "00:00";
+  const hhmm = (timePart || "00:00").slice(0, 5) || "00:00";
+  return `${isoDate}T${hhmm}`;
 }
 
 function personDisplayName(p) {
@@ -67,16 +127,15 @@ export default function EditTransactionModal({
   const [toPerson, setToPerson] = useState(null);
 
   const [code, setCode] = useState("");
-  const [dateDue, setDateDue] = useState("");
+  const [dateDue, setDateDue] = useState(""); // ISO YYYY-MM-DD
   const [amountPaid, setAmountPaid] = useState("");
   const [paymentType, setPaymentType] = useState("CSH");
   const [transactionType, setTransactionType] = useState("EXP");
-  const [dateRegistered, setDateRegistered] = useState(nowLocalDateTimeForInput());
+  const [dateRegistered, setDateRegistered] = useState(nowLocalDateTimeForInput()); // ISO datetime-local
   const [dsc, setDsc] = useState("");
 
   const [projectsCache, setProjectsCache] = useState([]);
 
-  // Quick add person modal + target
   const [quickAddPersonOpen, setQuickAddPersonOpen] = useState(false);
   const [personQuickAddTarget, setPersonQuickAddTarget] = useState(null); // "from" | "to"
 
@@ -116,14 +175,16 @@ export default function EditTransactionModal({
     );
 
     setCode(transaction.code || "");
-    setDateDue(transaction.dateDue || "");
+
+    // ensure ISO strings (latin digits)
+    setDateDue(toLatinDigits(transaction.dateDue || ""));
+
     setAmountPaid(transaction.amountPaid != null ? String(transaction.amountPaid) : "");
     setPaymentType(transaction.paymentType || "CSH");
     setTransactionType(transaction.transactionType || "EXP");
 
-    // اگر از backend با ثانیه بیاید هم ok (datetime-local فقط دقیقه)
     const dr = transaction.dateRegistered || "";
-    setDateRegistered(dr ? dr.substring(0, 16) : nowLocalDateTimeForInput());
+    setDateRegistered(dr ? toLatinDigits(dr.substring(0, 16)) : nowLocalDateTimeForInput());
 
     setDsc(transaction.dsc || "");
   }, [open, transaction]);
@@ -137,7 +198,9 @@ export default function EditTransactionModal({
     async ({ q }) => {
       const needle = (q || "").trim();
       if (!needle) return projectsCache.slice(0, 30);
-      return projectsCache.filter((p) => (p?.title || "").includes(needle)).slice(0, 30);
+      return projectsCache
+        .filter((p) => (p?.title || "").includes(needle))
+        .slice(0, 30);
     },
     [projectsCache]
   );
@@ -159,7 +222,7 @@ export default function EditTransactionModal({
     if (!transaction?.id) return;
 
     if (Object.keys(errors).length > 0) {
-      toast.error(getApiErrorMessage(e, "اطلاعات را کامل کنید"));
+      toast.error("اطلاعات را کامل کنید");
       return;
     }
 
@@ -170,11 +233,12 @@ export default function EditTransactionModal({
         fromPersonId: fromPerson.id,
         toPersonId: toPerson.id,
         code: code.trim(),
-        dateDue,
-        amountPaid: Number(amountPaid),
+        // ✅ send latin digits
+        dateDue: toLatinDigits(dateDue),
+        amountPaid: Number(toLatinDigits(amountPaid)),
         paymentType,
         transactionType,
-        dateRegistered,
+        dateRegistered: toLatinDigits(dateRegistered),
         dsc: dsc?.trim() || null,
       };
 
@@ -182,8 +246,8 @@ export default function EditTransactionModal({
       toast.success("ویرایش شد");
       onClose?.();
       await onUpdated?.();
-    } catch(e) {
-      toast.error(getApiErrorMessage(e, "خطا در ویرایش"));
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "خطا در ویرایش"));
     } finally {
       setSaving(false);
     }
@@ -281,7 +345,12 @@ export default function EditTransactionModal({
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input label="کد" value={code} onChange={(e) => setCode(e.target.value)} error={errors.code} />
+              <Input
+                label="کد"
+                value={code}
+                onChange={(e) => setCode(e.target.value)}
+                error={errors.code}
+              />
               <Input
                 label="مبلغ"
                 type="number"
@@ -291,21 +360,45 @@ export default function EditTransactionModal({
               />
             </div>
 
+            {/* ✅ Jalali pickers */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <Input
-                label="تاریخ سررسید"
-                type="date"
-                value={dateDue}
-                onChange={(e) => setDateDue(e.target.value)}
-                error={errors.dateDue}
-              />
-              <Input
-                label="تاریخ ثبت (با ساعت)"
-                type="datetime-local"
-                value={dateRegistered}
-                onChange={(e) => setDateRegistered(e.target.value)}
-                error={errors.dateRegistered}
-              />
+              <div>
+                <label className="text-sm text-zinc-700">تاریخ سررسید</label>
+                <DatePicker
+                  value={isoToPersianDateObject(dateDue)}
+                  onChange={(val) => setDateDue(persianValueToIso(val))}
+                  calendar={persian}
+                  locale={persian_fa}
+                  format="YYYY/MM/DD"
+                  calendarPosition="bottom-right"
+                  inputClass="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300"
+                  containerClassName="rtl"
+                />
+                {errors.dateDue && <div className="text-xs text-red-600 mt-1">{errors.dateDue}</div>}
+              </div>
+
+              <div>
+                <label className="text-sm text-zinc-700">تاریخ ثبت (با ساعت)</label>
+                <DatePicker
+                  value={isoToPersianDateObject(String(dateRegistered || "").slice(0, 10))}
+                  onChange={(val) => {
+                    const iso = persianValueToIso(val);
+                    setDateRegistered((prev) => setDatePartForDatetime(prev, iso));
+                  }}
+                  calendar={persian}
+                  locale={persian_fa}
+                  format="YYYY/MM/DD"
+                  calendarPosition="bottom-right"
+                  inputClass="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300"
+                  containerClassName="rtl"
+                />
+                <div className="text-[11px] text-zinc-500 mt-1">
+                  زمان (HH:mm) از مقدار فعلی حفظ می‌شود.
+                </div>
+                {errors.dateRegistered && (
+                  <div className="text-xs text-red-600 mt-1">{errors.dateRegistered}</div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">

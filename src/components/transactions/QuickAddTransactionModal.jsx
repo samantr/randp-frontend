@@ -9,9 +9,17 @@ import { createTransaction } from "../../api/transactionsApi";
 import { searchPersons } from "../../api/personsApi";
 import { getProjects } from "../../api/projectsApi";
 
-// اگر مسیر فایل شما فرق دارد، این import را اصلاح کنید
 import QuickAddPersonModal from "../persons/QuickAddPersonModal";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+
+/* ======================
+   Jalali Date Picker (same as Dashboard)
+   ====================== */
+import DatePicker from "react-multi-date-picker";
+import DateObject from "react-date-object";
+import persian from "react-date-object/calendars/persian";
+import gregorian from "react-date-object/calendars/gregorian";
+import persian_fa from "react-date-object/locales/persian_fa";
 
 function normalizePageLike(data) {
   if (Array.isArray(data)) return { content: data, totalPages: 1 };
@@ -30,6 +38,58 @@ function nowLocalDateTimeForInput() {
   return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
 }
 
+/* ======================
+   Digit normalization (FA/AR -> EN)
+   ====================== */
+function toLatinDigits(input) {
+  const s = String(input ?? "");
+  const fa = "۰۱۲۳۴۵۶۷۸۹";
+  const ar = "٠١٢٣٤٥٦٧٨٩";
+  let out = "";
+  for (const ch of s) {
+    const iFa = fa.indexOf(ch);
+    if (iFa >= 0) {
+      out += String(iFa);
+      continue;
+    }
+    const iAr = ar.indexOf(ch);
+    if (iAr >= 0) {
+      out += String(iAr);
+      continue;
+    }
+    out += ch;
+  }
+  return out;
+}
+
+/* ======================
+   ISO <-> Jalali helpers
+   ====================== */
+function isoToPersianDateObject(iso) {
+  if (!iso) return null;
+  return new DateObject({
+    date: iso,
+    format: "YYYY-MM-DD",
+    calendar: gregorian,
+    locale: persian_fa,
+  }).convert(persian);
+}
+
+function persianValueToIso(value) {
+  if (!value) return "";
+  const g = new DateObject(value).convert(gregorian);
+  return toLatinDigits(g.format("YYYY-MM-DD"));
+}
+
+// keep time part for datetime field when user picks a date
+function setDatePartForDatetime(prevDatetime, isoDate) {
+  if (!isoDate) return prevDatetime || "";
+  const prev = String(prevDatetime || "");
+  const timePart = prev.includes("T") ? prev.split("T")[1] : "00:00";
+  const hhmm = (timePart || "00:00").slice(0, 5) || "00:00";
+  return `${isoDate}T${hhmm}`;
+}
+
 function personDisplayName(p) {
   if (!p) return "-";
   if (p.isLegal) return p.companyName || `#${p.id}`;
@@ -42,7 +102,6 @@ function projectDisplayName(p) {
   return p.title || `#${p.id}`;
 }
 
-// enums مطابق فایل‌های شما
 const PAYMENT_TYPES = [
   { code: "CSH", label: "نقد" },
   { code: "CHK", label: "چک" },
@@ -63,18 +122,16 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
   const [toPerson, setToPerson] = useState(null);
 
   const [code, setCode] = useState("");
-  const [dateDue, setDateDue] = useState("");
+  const [dateDue, setDateDue] = useState(""); // ISO YYYY-MM-DD
   const [amountPaid, setAmountPaid] = useState("");
   const [paymentType, setPaymentType] = useState("CSH");
   const [transactionType, setTransactionType] = useState("EXP");
-  const [dateRegistered, setDateRegistered] = useState(nowLocalDateTimeForInput());
+  const [dateRegistered, setDateRegistered] = useState(nowLocalDateTimeForInput()); // ISO datetime-local
   const [dsc, setDsc] = useState("");
 
-  // Quick add person modal + target (from/to)
   const [quickAddPersonOpen, setQuickAddPersonOpen] = useState(false);
   const [personQuickAddTarget, setPersonQuickAddTarget] = useState(null); // "from" | "to"
 
-  // cache projects
   const [projectsCache, setProjectsCache] = useState([]);
   useEffect(() => {
     if (!open) return;
@@ -95,7 +152,9 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
     async ({ q }) => {
       const needle = (q || "").trim();
       if (!needle) return projectsCache.slice(0, 30);
-      return projectsCache.filter((p) => (p?.title || "").includes(needle)).slice(0, 30);
+      return projectsCache
+        .filter((p) => (p?.title || "").includes(needle))
+        .slice(0, 30);
     },
     [projectsCache]
   );
@@ -105,12 +164,11 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
     if (!project?.id) e.project = "پروژه را انتخاب کنید";
     if (!fromPerson?.id) e.fromPerson = "فرستنده را انتخاب کنید";
     if (!toPerson?.id) e.toPerson = "گیرنده را انتخاب کنید";
-    // if (!code.trim()) e.code = "کد را وارد کنید";
     if (!dateDue) e.dateDue = "تاریخ سررسید را وارد کنید";
     if (!amountPaid || Number(amountPaid) <= 0) e.amountPaid = "مبلغ معتبر وارد کنید";
     if (!dateRegistered) e.dateRegistered = "تاریخ ثبت را وارد کنید";
     return e;
-  }, [project, fromPerson, toPerson, code, dateDue, amountPaid, dateRegistered]);
+  }, [project, fromPerson, toPerson, dateDue, amountPaid, dateRegistered]);
 
   function reset() {
     setProject(null);
@@ -136,7 +194,7 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
   async function handleSubmit(e) {
     e?.preventDefault?.();
     if (Object.keys(errors).length > 0) {
-      toast.error(getApiErrorMessage(e, "اطلاعات را کامل کنید"));
+      toast.error("اطلاعات را کامل کنید");
       return;
     }
 
@@ -146,12 +204,13 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
         projectId: project.id,
         fromPersonId: fromPerson.id,
         toPersonId: toPerson.id,
-        code: code.trim() || null, // optional
-        dateDue,
-        amountPaid: Number(amountPaid),
+        code: code.trim() || null,
+        // ✅ make sure digits are latin before sending
+        dateDue: toLatinDigits(dateDue),
+        amountPaid: Number(toLatinDigits(amountPaid)),
         paymentType,
         transactionType,
-        dateRegistered,
+        dateRegistered: toLatinDigits(dateRegistered),
         dsc: dsc?.trim() || null,
       };
 
@@ -159,8 +218,8 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
       toast.success("ثبت شد");
       onClose?.();
       await onCreated?.();
-    } catch(e) {
-      toast.error(getApiErrorMessage(e, "خطا در ثبت تراکنش"));
+    } catch (err) {
+      toast.error(getApiErrorMessage(err, "خطا در ثبت تراکنش"));
     } finally {
       setSaving(false);
     }
@@ -254,11 +313,11 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <Input
-                label="کد (اختیاری)"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="خالی بگذارید تا خودکار تولید شود"
-              />
+              label="کد (اختیاری)"
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              placeholder="خالی بگذارید تا خودکار تولید شود"
+            />
             <Input
               label="مبلغ"
               type="number"
@@ -268,21 +327,45 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
             />
           </div>
 
+          {/* ✅ Jalali pickers */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            <Input
-              label="تاریخ سررسید"
-              type="date"
-              value={dateDue}
-              onChange={(e) => setDateDue(e.target.value)}
-              error={errors.dateDue}
-            />
-            <Input
-              label="تاریخ ثبت (با ساعت)"
-              type="datetime-local"
-              value={dateRegistered}
-              onChange={(e) => setDateRegistered(e.target.value)}
-              error={errors.dateRegistered}
-            />
+            <div>
+              <label className="text-sm text-zinc-700">تاریخ سررسید</label>
+              <DatePicker
+                value={isoToPersianDateObject(dateDue)}
+                onChange={(val) => setDateDue(persianValueToIso(val))}
+                calendar={persian}
+                locale={persian_fa}
+                format="YYYY/MM/DD"
+                calendarPosition="bottom-right"
+                inputClass="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300"
+                containerClassName="rtl"
+              />
+              {errors.dateDue && <div className="text-xs text-red-600 mt-1">{errors.dateDue}</div>}
+            </div>
+
+            <div>
+              <label className="text-sm text-zinc-700">تاریخ ثبت (با ساعت)</label>
+              <DatePicker
+                value={isoToPersianDateObject(String(dateRegistered || "").slice(0, 10))}
+                onChange={(val) => {
+                  const iso = persianValueToIso(val);
+                  setDateRegistered((prev) => setDatePartForDatetime(prev, iso));
+                }}
+                calendar={persian}
+                locale={persian_fa}
+                format="YYYY/MM/DD"
+                calendarPosition="bottom-right"
+                inputClass="w-full rounded-lg border border-zinc-200 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-zinc-300"
+                containerClassName="rtl"
+              />
+              <div className="text-[11px] text-zinc-500 mt-1">
+                زمان (HH:mm) از مقدار فعلی حفظ می‌شود.
+              </div>
+              {errors.dateRegistered && (
+                <div className="text-xs text-red-600 mt-1">{errors.dateRegistered}</div>
+              )}
+            </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -329,7 +412,6 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
         </form>
       </Modal>
 
-      {/* Quick Add Person (auto select) */}
       <QuickAddPersonModal
         open={quickAddPersonOpen}
         onClose={() => {

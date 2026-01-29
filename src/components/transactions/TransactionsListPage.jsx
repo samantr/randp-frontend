@@ -23,6 +23,32 @@ import EditTransactionModal from "./EditTransactionModal";
 import { getPersons } from "../../api/personsApi";
 import { getProjects } from "../../api/projectsApi";
 
+/* ======================
+   Jalali helpers (DISPLAY ONLY)
+   ====================== */
+import DateObject from "react-date-object";
+import persian from "react-date-object/calendars/persian";
+import gregorian from "react-date-object/calendars/gregorian";
+import persian_fa from "react-date-object/locales/persian_fa";
+
+function isoToJalaliText(iso) {
+  if (!iso) return "-";
+  try {
+    return new DateObject({
+      date: iso,
+      format: "YYYY-MM-DD",
+      calendar: gregorian,
+      locale: persian_fa,
+    })
+      .convert(persian)
+      .format("YYYY/MM/DD");
+  } catch {
+    return iso;
+  }
+}
+
+/* ====================== */
+
 function normalizePageLike(data) {
   if (Array.isArray(data)) return { content: data, totalPages: 1 };
   if (data?.content) return data;
@@ -55,9 +81,7 @@ function moneyFa(v) {
 }
 
 function normalizeText(v) {
-  return String(v ?? "")
-    .trim()
-    .toLowerCase();
+  return String(v ?? "").trim().toLowerCase();
 }
 
 function toDateSortable(v) {
@@ -89,14 +113,13 @@ function parseIntSafe(v, fallback = 0) {
 function parseStateFromSearchParams(sp) {
   const page = parseIntSafe(sp.get("page"), 0);
 
-const sortKey = sp.get("sortKey");
-const sortDir = sp.get("sortDir");
+  const sortKey = sp.get("sortKey");
+  const sortDir = sp.get("sortDir");
 
-const sort =
-  sortKey && (sortDir === "asc" || sortDir === "desc")
-    ? { key: sortKey, dir: sortDir }
-    : { key: "dateRegistered", dir: "desc" };
-
+  const sort =
+    sortKey && (sortDir === "asc" || sortDir === "desc")
+      ? { key: sortKey, dir: sortDir }
+      : { key: "dateRegistered", dir: "desc" };
 
   const cf = { ...EMPTY_CF };
   for (const k of CF_KEYS) {
@@ -109,8 +132,6 @@ const sort =
 
 function buildSearchParamsObject({ page, sort, cf }) {
   const params = {};
-
-  // keep page always, so browser back returns exact page
   params.page = String(page ?? 0);
 
   if (sort?.key && sort?.dir) {
@@ -133,7 +154,6 @@ function stableSerializeParamsObject(obj) {
   return keys.map((k) => `${k}=${obj[k]}`).join("&");
 }
 
-/** ✅ keep outside so input won't lose focus */
 const HeaderFilterInput = React.memo(function HeaderFilterInput({
   value,
   onChange,
@@ -159,7 +179,6 @@ const SortableHeader = React.memo(function SortableHeader({
       type="button"
       className="flex items-center gap-2 font-semibold"
       onClick={onClick}
-      title="مرتب‌سازی"
     >
       <span>{title}</span>
       <span className="text-xs text-zinc-500">{icon}</span>
@@ -171,12 +190,13 @@ export default function TransactionsListPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // --- URL <-> STATE sync guards
-  const lastAppliedUrlRef = useRef(""); // last url-serialized params we applied to state
-  const lastPushedStateRef = useRef(""); // last state-serialized params we pushed to url
+  const lastAppliedUrlRef = useRef("");
+  const lastPushedStateRef = useRef("");
 
-  // init state from URL once
-  const initial = useMemo(() => parseStateFromSearchParams(searchParams), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const initial = useMemo(
+    () => parseStateFromSearchParams(searchParams),
+    [] // eslint-disable-line
+  );
 
   const [page, setPage] = useState(initial.page);
   const [size] = useState(20);
@@ -185,57 +205,40 @@ export default function TransactionsListPage() {
   const [data, setData] = useState({ content: [], totalPages: 0 });
 
   const [deleteId, setDeleteId] = useState(null);
-
   const [quickAddOpen, setQuickAddOpen] = useState(false);
 
   const [editOpen, setEditOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [editLoading, setEditLoading] = useState(false);
 
-  // per-column filters
   const [cf, setCf] = useState(initial.cf);
-
-  // sorting
   const [sort, setSort] = useState(initial.sort);
 
-  // lookup caches
   const [personsMap, setPersonsMap] = useState({});
   const [projectsMap, setProjectsMap] = useState({});
 
-  // 1) URL -> STATE (handles browser back/forward or manual URL edits)
   useEffect(() => {
     const parsed = parseStateFromSearchParams(searchParams);
     const nextObj = buildSearchParamsObject(parsed);
     const nextSig = stableSerializeParamsObject(nextObj);
 
-    // avoid re-applying same URL state
     if (nextSig === lastAppliedUrlRef.current) return;
     lastAppliedUrlRef.current = nextSig;
 
     setPage(parsed.page);
     setSort(parsed.sort);
     setCf(parsed.cf);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
-  // 2) STATE -> URL (keeps it preserved when navigating away and coming back)
   useEffect(() => {
     const obj = buildSearchParamsObject({ page, sort, cf });
     const sig = stableSerializeParamsObject(obj);
 
-    // avoid pushing same state repeatedly
     if (sig === lastPushedStateRef.current) return;
     lastPushedStateRef.current = sig;
 
-    // if URL already matches, do nothing
-    const currentObj = {};
-    for (const [k, v] of searchParams.entries()) currentObj[k] = v;
-    const currentSig = stableSerializeParamsObject(currentObj);
-
-    if (sig === currentSig) return;
-
     setSearchParams(obj, { replace: true });
-  }, [page, sort, cf, setSearchParams, searchParams]);
+  }, [page, sort, cf, setSearchParams]);
 
   const loadLookups = useCallback(async () => {
     try {
@@ -277,22 +280,19 @@ export default function TransactionsListPage() {
   );
 
   useEffect(() => {
-    let alive = true;
-    const t = setTimeout(async () => {
-      if (!alive) return;
-      await load();
-    }, 150);
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
+    const t = setTimeout(load, 150);
+    return () => clearTimeout(t);
   }, [page, load]);
 
   const rowValue = useCallback(
     (r, key) => {
       if (!r) return "";
 
-      if (key === "code") return r.code ?? "";
+      if (key === "dateDue")
+        return isoToJalaliText(r.dateDue);
+
+      if (key === "dateRegistered")
+        return isoToJalaliText(String(r.dateRegistered || "").slice(0, 10));
 
       if (key === "project") {
         const id = r.projectId || r.project?.id;
@@ -309,8 +309,6 @@ export default function TransactionsListPage() {
         return id ? personsMap[id] || `#${id}` : "-";
       }
 
-      if (key === "dateDue") return r.dateDue || "-";
-
       if (key === "amountPaid") return r.amountPaid ?? "";
       if (key === "allocatedAmount") return r.allocatedAmount ?? "";
       if (key === "remainingAmount") return r.remainingAmount ?? "";
@@ -318,10 +316,6 @@ export default function TransactionsListPage() {
       if (key === "paymentType") return paymentTypeLabel(r.paymentType);
       if (key === "transactionType")
         return transactionTypeLabel(r.transactionType);
-
-      if (key === "dsc") return r.dsc || "-";
-
-      if (key === "dateRegistered") return r.dateRegistered || "";
 
       return r[key] ?? "";
     },
@@ -337,18 +331,6 @@ export default function TransactionsListPage() {
         if (!needle) continue;
 
         const val = rowValue(r, k);
-
-        if (
-          k === "amountPaid" ||
-          k === "allocatedAmount" ||
-          k === "remainingAmount"
-        ) {
-          const v = normalizeText(String(val ?? ""));
-          const vFa = normalizeText(moneyFa(val));
-          if (!v.includes(needle) && !vFa.includes(needle)) return false;
-          continue;
-        }
-
         const hay = normalizeText(val);
         if (!hay.includes(needle)) return false;
       }
@@ -358,33 +340,19 @@ export default function TransactionsListPage() {
     if (!sort.key || !sort.dir) return filtered;
 
     const dirMul = sort.dir === "asc" ? 1 : -1;
-    const key = sort.key;
 
     return [...filtered].sort((a, b) => {
-      if (key === "amountPaid")
-        return dirMul * (Number(a.amountPaid || 0) - Number(b.amountPaid || 0));
-      if (key === "allocatedAmount")
-        return (
-          dirMul *
-          (Number(a.allocatedAmount || 0) - Number(b.allocatedAmount || 0))
-        );
-      if (key === "remainingAmount")
-        return (
-          dirMul *
-          (Number(a.remainingAmount || 0) - Number(b.remainingAmount || 0))
-        );
-
-      if (key === "dateDue")
+      if (sort.key === "dateDue")
         return dirMul * (toDateSortable(a.dateDue) - toDateSortable(b.dateDue));
+      if (sort.key === "dateRegistered")
+        return (
+          dirMul *
+          (toDateSortable(a.dateRegistered) -
+            toDateSortable(b.dateRegistered))
+        );
 
-      if (key === "dateRegistered")
-  return (
-    dirMul *
-    (toDateSortable(a.dateRegistered) -
-      toDateSortable(b.dateRegistered))
-  );
-      const va = normalizeText(rowValue(a, key));
-      const vb = normalizeText(rowValue(b, key));
+      const va = normalizeText(rowValue(a, sort.key));
+      const vb = normalizeText(rowValue(b, sort.key));
       if (va < vb) return -1 * dirMul;
       if (va > vb) return 1 * dirMul;
       return 0;
@@ -409,16 +377,12 @@ export default function TransactionsListPage() {
       await deleteTransaction(deleteId);
       toast.success("حذف شد");
       setDeleteId(null);
-
-      const isLastRowOnPage = (data?.content || []).length <= 1;
-      const nextPage = isLastRowOnPage && page > 0 ? page - 1 : page;
-
-      if (nextPage !== page) setPage(nextPage);
-      await load({ nextPage });
+      await load();
     } catch (e) {
       toast.error(getApiErrorMessage(e, "خطا در حذف"));
     }
   }
+
 
   return (
     <>

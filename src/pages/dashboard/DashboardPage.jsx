@@ -28,6 +28,15 @@ import {
 } from "recharts";
 
 /* ======================
+   Jalali Date Picker
+   ====================== */
+import DatePicker from "react-multi-date-picker";
+import DateObject from "react-date-object";
+import persian from "react-date-object/calendars/persian";
+import gregorian from "react-date-object/calendars/gregorian";
+import persian_fa from "react-date-object/locales/persian_fa";
+
+/* ======================
    Colors (high contrast)
    ====================== */
 const PIE_COLORS = [
@@ -58,6 +67,27 @@ function addDaysISO(iso, days) {
   const d = new Date(iso);
   d.setDate(d.getDate() + days);
   return d.toISOString().slice(0, 10); // yyyy-MM-dd
+}
+
+/* ======================
+   ISO <-> Jalali helpers
+   ====================== */
+function isoToPersianDateObject(iso) {
+  if (!iso) return null;
+  // parse ISO as Gregorian, then convert to Persian for display
+  return new DateObject({
+    date: iso,
+    format: "YYYY-MM-DD",
+    calendar: gregorian,
+    locale: persian_fa,
+  }).convert(persian);
+}
+
+function persianValueToIso(value) {
+  if (!value) return "";
+  // value is a DateObject-like from the picker; convert to Gregorian and format ISO
+  const g = new DateObject(value).convert(gregorian);
+  return g.format("YYYY-MM-DD");
 }
 
 function Modal({ open, title, onClose, children }) {
@@ -180,16 +210,14 @@ async function apiGetExecutiveKpis({ from, to, asOf }) {
 
 function badge(type) {
   const t = String(type || "").toUpperCase();
-  if (t === "DEBT")
-    return "bg-amber-50 text-amber-700 border-amber-200";
-  if (t === "TRANSACTION")
-    return "bg-blue-50 text-blue-700 border-blue-200";
-  if (t === "ALLOCATION")
-    return "bg-emerald-50 text-emerald-700 border-emerald-200";
+  if (t === "DEBT") return "bg-amber-50 text-amber-700 border-amber-200";
+  if (t === "TRANSACTION") return "bg-blue-50 text-blue-700 border-blue-200";
+  if (t === "ALLOCATION") return "bg-emerald-50 text-emerald-700 border-emerald-200";
   return "bg-zinc-50 text-zinc-700 border-zinc-200";
 }
 
 export default function DashboardPage() {
+  // keep ISO in state (Gregorian), but show Jalali in UI
   const [from, setFrom] = useState(addDaysISO(todayISO(), -365));
   const [to, setTo] = useState(todayISO());
 
@@ -239,17 +267,14 @@ export default function DashboardPage() {
       lastRefresh: () => getLastRefresh(),
 
       personsSummary: () => getPersonsSummary({ from, to, limit: 50 }),
-      itemCategoriesSummary: () =>
-        getItemCategoriesSummary({ from, to, limit: 50 }),
+      itemCategoriesSummary: () => getItemCategoriesSummary({ from, to, limit: 50 }),
 
       // simplified aging: still fetched, but UI shows only person + open_total
-      debtAgingPersons: () =>
-        getDebtAgingByPerson({ from, to, asOf: to, limit: 50 }),
+      debtAgingPersons: () => getDebtAgingByPerson({ from, to, asOf: to, limit: 50 }),
 
       openDebtsCoverage: () => apiGetOpenDebtsCoverage({ from, to, limit: 50 }),
 
-      unallocatedOverview: () =>
-        apiGetUnallocatedOverview({ from, to, limit: 50 }),
+      unallocatedOverview: () => apiGetUnallocatedOverview({ from, to, limit: 50 }),
 
       recentActivities: () => apiGetRecentActivities({ limit: 20 }),
 
@@ -293,9 +318,7 @@ export default function DashboardPage() {
       const uo = get("unallocatedOverview");
       if (uo !== undefined) {
         setUnallocatedOpenDebts(uo?.openDebts || uo?.open_debts || []);
-        setUnallocatedExpenseTxs(
-          uo?.unallocatedExpenses || uo?.unallocated_expenses || []
-        );
+        setUnallocatedExpenseTxs(uo?.unallocatedExpenses || uo?.unallocated_expenses || []);
       }
 
       const ra = get("recentActivities");
@@ -393,20 +416,30 @@ export default function DashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* ✅ Jalali range picker (UI Jalali, state ISO) */}
           <div className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2">
             <label className="text-xs text-zinc-600">از</label>
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => setFrom(e.target.value)}
-              className="text-xs outline-none"
+            <DatePicker
+              value={isoToPersianDateObject(from)}
+              onChange={(val) => setFrom(persianValueToIso(val))}
+              calendar={persian}
+              locale={persian_fa}
+              format="YYYY/MM/DD"
+              calendarPosition="bottom-right"
+              inputClass="text-xs outline-none bg-transparent w-[120px]"
+              containerClassName="rtl"
             />
+
             <label className="text-xs text-zinc-600">تا</label>
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => setTo(e.target.value)}
-              className="text-xs outline-none"
+            <DatePicker
+              value={isoToPersianDateObject(to)}
+              onChange={(val) => setTo(persianValueToIso(val))}
+              calendar={persian}
+              locale={persian_fa}
+              format="YYYY/MM/DD"
+              calendarPosition="bottom-right"
+              inputClass="text-xs outline-none bg-transparent w-[120px]"
+              containerClassName="rtl"
             />
           </div>
 
@@ -518,15 +551,9 @@ export default function DashboardPage() {
                     title="کلیک برای Drill"
                   >
                     <td className="py-2 text-right">{c.title}</td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(c.amount)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(c.allocatedAmount)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(c.remaining)}
-                    </td>
+                    <td className="py-2 text-left font-mono">{formatNumber(c.amount)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(c.allocatedAmount)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(c.remaining)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -536,10 +563,7 @@ export default function DashboardPage() {
       </MiniTable>
 
       {/* Persons drill */}
-      <MiniTable
-        title="اشخاص"
-        subtitle="کلیک روی شخص برای دیدن بدهی‌های قابل پرداخت"
-      >
+      <MiniTable title="اشخاص" subtitle="کلیک روی شخص برای دیدن بدهی‌های قابل پرداخت">
         {personsSummary.length === 0 ? (
           <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
         ) : (
@@ -563,18 +587,10 @@ export default function DashboardPage() {
                     title="کلیک برای Drill"
                   >
                     <td className="py-2 text-right">{p.displayName}</td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(p.totalDebt)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(p.totalPaid)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(p.totalReceived)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(p.remain)}
-                    </td>
+                    <td className="py-2 text-left font-mono">{formatNumber(p.totalDebt)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(p.totalPaid)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(p.totalReceived)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(p.remain)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -656,15 +672,9 @@ export default function DashboardPage() {
                       <td className="py-2 text-right font-mono">{debtDate}</td>
                       <td className="py-2 text-right">{personName}</td>
                       <td className="py-2 text-right">{projectTitle}</td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(totalDebt)}
-                      </td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(allocated)}
-                      </td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(remaining)}
-                      </td>
+                      <td className="py-2 text-left font-mono">{formatNumber(totalDebt)}</td>
+                      <td className="py-2 text-left font-mono">{formatNumber(allocated)}</td>
+                      <td className="py-2 text-left font-mono">{formatNumber(remaining)}</td>
                       <td className="py-2 text-right">
                         <div className="flex items-center gap-2 justify-end">
                           <div className="w-28 h-2 bg-zinc-200 rounded-full overflow-hidden">
@@ -815,6 +825,10 @@ export default function DashboardPage() {
               const title = a.title ?? "-";
               const amount = a.amount ?? 0;
 
+              const actor = a.actor ?? "-";
+              const action = a.action ?? a.audit_action ?? "-";
+              const success = (a.success === true) ? "✅" : (a.success === false ? "❌" : "");
+
               return (
                 <div
                   key={idx}
@@ -822,19 +836,17 @@ export default function DashboardPage() {
                 >
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span
-                        className={`text-[11px] px-2 py-0.5 rounded-full border ${badge(type)}`}
-                      >
+                      <span className={`text-[11px] px-2 py-0.5 rounded-full border ${badge(type)}`}>
                         {type}
                       </span>
-                      <div className="text-xs text-zinc-500">{time}</div>
+                      <div className="text-xs text-zinc-500">
+                        {time} • {success} {actor} • {action}
+                      </div>
                     </div>
                     <div className="font-medium mt-1 truncate">{title}</div>
                   </div>
 
-                  <div className="font-mono whitespace-nowrap">
-                    {formatNumber(amount)}
-                  </div>
+                  <div className="font-mono whitespace-nowrap">{formatNumber(amount)}</div>
                 </div>
               );
             })}
@@ -876,18 +888,10 @@ export default function DashboardPage() {
                     key={`${r.debtHeaderId ?? r.debt_header_id ?? idx}`}
                     className="border-b"
                   >
-                    <td className="py-2 text-right">
-                      {r.debtHeaderId ?? r.debt_header_id}
-                    </td>
-                    <td className="py-2 text-right">
-                      {r.debtDate ?? r.debt_date}
-                    </td>
-                    <td className="py-2 text-right">
-                      {r.projectTitle ?? r.project_title}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.remaining)}
-                    </td>
+                    <td className="py-2 text-right">{r.debtHeaderId ?? r.debt_header_id}</td>
+                    <td className="py-2 text-right">{r.debtDate ?? r.debt_date}</td>
+                    <td className="py-2 text-right">{r.projectTitle ?? r.project_title}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -925,20 +929,11 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {itemsByCategory.map((it, idx) => (
-                  <tr
-                    key={`${it.itemId ?? it.item_id ?? idx}`}
-                    className="border-b"
-                  >
+                  <tr key={`${it.itemId ?? it.item_id ?? idx}`} className="border-b">
                     <td className="py-2 text-right">{it.title}</td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(it.amount)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(it.allocatedAmount)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(it.remaining)}
-                    </td>
+                    <td className="py-2 text-left font-mono">{formatNumber(it.amount)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(it.allocatedAmount)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(it.remaining)}</td>
                   </tr>
                 ))}
               </tbody>

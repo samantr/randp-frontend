@@ -30,6 +30,15 @@ import QuickAddPersonModal from "../persons/QuickAddPersonModal.jsx";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
+/* ======================
+   Jalali Date Picker (same as Dashboard)
+   ====================== */
+import DatePicker from "react-multi-date-picker";
+import DateObject from "react-date-object";
+import persian from "react-date-object/calendars/persian";
+import gregorian from "react-date-object/calendars/gregorian";
+import persian_fa from "react-date-object/locales/persian_fa";
+
 /** yyyy-mm-ddTHH:mm */
 function nowLocalISOForInput() {
   const d = new Date();
@@ -81,6 +90,40 @@ async function loadAllPaged(fetchPageFn, pageSize = 200, maxPages = 50) {
     if (chunk.length < pageSize) break;
   }
   return all;
+}
+
+/* ======================
+   ISO <-> Jalali helpers (same as Dashboard)
+   ====================== */
+function isoToPersianDateObject(iso) {
+  if (!iso) return null;
+  return new DateObject({
+    date: iso,
+    format: "YYYY-MM-DD",
+    calendar: gregorian,
+    locale: persian_fa,
+  }).convert(persian);
+}
+
+function persianValueToIso(value) {
+  if (!value) return "";
+  const g = new DateObject(value).convert(gregorian);
+  return toLatinDigits(g.format("YYYY-MM-DD"));
+}
+
+
+function isoToJalaliText(iso) {
+  const d = isoToPersianDateObject(iso);
+  return d ? d.format("YYYY/MM/DD") : "";
+}
+
+// keep time part when picking a Jalali date for datetime field
+function setDatePartForDatetime(prevDatetime, isoDate) {
+  if (!isoDate) return prevDatetime || "";
+  const prev = String(prevDatetime || "");
+  const timePart = prev.includes("T") ? prev.split("T")[1] : "00:00";
+  const hhmm = (timePart || "00:00").slice(0, 5) || "00:00";
+  return `${isoDate}T${hhmm}`;
 }
 
 // --------------------
@@ -164,6 +207,21 @@ function SortButton({ label, active, dir, onClick }) {
   );
 }
 
+function toLatinDigits(input) {
+  const s = String(input ?? "");
+  const fa = "۰۱۲۳۴۵۶۷۸۹";
+  const ar = "٠١٢٣٤٥٦٧٨٩"; // Arabic-Indic
+  let out = "";
+  for (const ch of s) {
+    const iFa = fa.indexOf(ch);
+    if (iFa >= 0) { out += String(iFa); continue; }
+    const iAr = ar.indexOf(ch);
+    if (iAr >= 0) { out += String(iAr); continue; }
+    out += ch;
+  }
+  return out;
+}
+
 export default function DebtsMasterDetailPage() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -190,8 +248,8 @@ export default function DebtsMasterDetailPage() {
   // header form
   const [headerProject, setHeaderProject] = useState(null);
   const [headerPerson, setHeaderPerson] = useState(null);
-  const [dateRegistered, setDateRegistered] = useState(nowLocalISOForInput());
-  const [dateDue, setDateDue] = useState(nowLocalISODateForInput());
+  const [dateRegistered, setDateRegistered] = useState(nowLocalISOForInput()); // keep ISO datetime in state
+  const [dateDue, setDateDue] = useState(nowLocalISODateForInput()); // keep ISO date in state
   const [headerDsc, setHeaderDsc] = useState("");
 
   // lines
@@ -233,9 +291,6 @@ export default function DebtsMasterDetailPage() {
 
     if (sig === lastAppliedSigRef.current) return;
     lastAppliedSigRef.current = sig;
-
-    // ✅ coming from allocations/docs/back => pick first row of current list
-    //autoPickFirstRef.current = true;
 
     setPageIndex(parsed.pi);
     setSortBy(parsed.sortBy);
@@ -417,6 +472,7 @@ export default function DebtsMasterDetailPage() {
         personId ? personsMap.get(personId) || `#${personId}` : ""
       );
 
+      // NOTE: filter uses raw date_due string (ISO). Display is Jalali, but filtering is unchanged.
       const dateDue = normalizeFaText(String(r.date_due ?? ""));
       const total = normalizeFaText(String(r.total_amount ?? ""));
       const covered = normalizeFaText(String(r.covered_amount ?? ""));
@@ -732,8 +788,8 @@ export default function DebtsMasterDetailPage() {
     const payload = {
       projectId: headerProject.id,
       personId: headerPerson.id,
-      dateRegistered,
-      dateDue,
+      dateRegistered: toLatinDigits(dateRegistered),
+      dateDue: toLatinDigits(dateDue),
       dsc: headerDsc?.trim() || null,
       lines: editLines.map((l) => ({
         itemId: Number(l.item.id),
@@ -973,6 +1029,9 @@ export default function DebtsMasterDetailPage() {
 
                     const remaining = Number(r.remaining_amount || 0);
 
+                    const isoDue = String(r.date_due || "").slice(0, 10);
+                    const jalaliDue = isoDue ? isoToJalaliText(isoDue) : "-";
+
                     return (
                       <tr
                         key={r.debt_id}
@@ -991,7 +1050,10 @@ export default function DebtsMasterDetailPage() {
 
                         <td className="py-2">{projectTitle}</td>
                         <td className="py-2">{personName}</td>
-                        <td className="py-2">{r.date_due}</td>
+
+                        {/* ✅ Persian (Jalali) display */}
+                        <td className="py-2 font-mono">{jalaliDue}</td>
+
                         <td className="py-2">{moneyFa(r.total_amount)}</td>
                         <td className="py-2">{moneyFa(r.covered_amount)}</td>
                         <td className="py-2 font-semibold">
@@ -1112,19 +1174,43 @@ export default function DebtsMasterDetailPage() {
               onQuickAdd={() => setQuickAddPersonOpen(true)}
             />
 
-            <Input
-              label="تاریخ ثبت"
-              type="datetime-local"
-              value={dateRegistered}
-              onChange={(e) => setDateRegistered(e.target.value)}
-            />
+            {/* ✅ Persian (Jalali) date picker for dateRegistered (state keeps ISO datetime) */}
+            <div>
+              <label className="text-xs text-zinc-600">تاریخ ثبت</label>
+              <DatePicker
+                value={isoToPersianDateObject(
+                  String(dateRegistered || "").slice(0, 10)
+                )}
+                onChange={(val) => {
+                  const iso = persianValueToIso(val);
+                  setDateRegistered((prev) => setDatePartForDatetime(prev, iso));
+                }}
+                calendar={persian}
+                locale={persian_fa}
+                format="YYYY/MM/DD"
+                calendarPosition="bottom-right"
+                inputClass="w-full rounded-xl border border-zinc-200 px-2 py-2 text-sm"
+                containerClassName="rtl"
+              />
+              <div className="text-[11px] text-zinc-500 mt-1">
+                (زمان ثبت از مقدار فعلی نگه داشته می‌شود)
+              </div>
+            </div>
 
-            <Input
-              label="تاریخ سررسید"
-              type="date"
-              value={dateDue}
-              onChange={(e) => setDateDue(e.target.value)}
-            />
+            {/* ✅ Persian (Jalali) date picker for dateDue (state keeps ISO date) */}
+            <div>
+              <label className="text-xs text-zinc-600">تاریخ سررسید</label>
+              <DatePicker
+                value={isoToPersianDateObject(dateDue)}
+                onChange={(val) => setDateDue(persianValueToIso(val))}
+                calendar={persian}
+                locale={persian_fa}
+                format="YYYY/MM/DD"
+                calendarPosition="bottom-right"
+                inputClass="w-full rounded-xl border border-zinc-200 px-2 py-2 text-sm"
+                containerClassName="rtl"
+              />
+            </div>
 
             <div className="md:col-span-4">
               <Input
