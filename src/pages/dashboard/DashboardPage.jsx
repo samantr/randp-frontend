@@ -1010,7 +1010,7 @@ export default function DashboardPage() {
                     <th className="text-right py-2">ID</th>
                     <th className="text-right py-2">تاریخ</th>
                     <th className="text-right py-2">شخص</th>
-                    <th className="text-right py-2">پروژه</th>
+                    {/* <th className="text-right py-2">پروژه</th> */}
                     <th className="text-left py-2">مبلغ</th>
                     <th className="text-left py-2">تخصیص</th>
                     <th className="text-left py-2">مانده</th>
@@ -1026,14 +1026,14 @@ export default function DashboardPage() {
                         {r.transaction_id ?? r.transactionId}
                       </td>
                       <td className="py-2 text-right">
-                        {r.transaction_date ?? r.transactionDate}
+                        {r.tx_date ?? r.txDate}
                       </td>
                       <td className="py-2 text-right">
-                        {r.person_name ?? r.personName}
+                        {r.to_person_name ?? r.toPersonName}
                       </td>
-                      <td className="py-2 text-right">
+                      {/*<td className="py-2 text-right">
                         {r.project_title ?? r.projectTitle}
-                      </td>
+                      </td> */}
                       <td className="py-2 text-left font-mono">
                         {formatNumber(r.amount)}
                       </td>
