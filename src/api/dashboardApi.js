@@ -84,3 +84,11 @@ export async function getDebtAgingByPerson({ from, to, asOf, limit = 50 }) {
   return res.data;
 }
 
+export async function getItemCategoriesTree({ from, to, onlyActive = true }) {
+  const res = await api.get("/api/v1/dashboard/item-categories-tree", {
+    params: { from, to, onlyActive },
+  });
+  return res.data;
+}
+
+

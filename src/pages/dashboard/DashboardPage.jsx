@@ -11,8 +11,8 @@ import {
   refreshDashboardMart,
   getPersonsSummary,
   getPersonPayables,
-  getItemCategoriesSummary,
   getItemsByCategory,
+  getItemCategoriesTree,
   getDebtAgingByPerson,
 } from "../../api/dashboardApi";
 
@@ -37,9 +37,9 @@ import gregorian from "react-date-object/calendars/gregorian";
 import persian_fa from "react-date-object/locales/persian_fa";
 
 /* ======================
-   Colors (high contrast)
+   UI Helpers
    ====================== */
-const PIE_COLORS = [
+const COLORS = [
   "#2563EB", // blue
   "#DC2626", // red
   "#16A34A", // green
@@ -66,7 +66,35 @@ function todayISO() {
 function addDaysISO(iso, days) {
   const d = new Date(iso);
   d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10); // yyyy-MM-dd
+  return d.toISOString().slice(0, 10);
+}
+
+function buildCategoryTree(flatRows) {
+  const byId = new Map();
+  const roots = [];
+
+  (flatRows || []).forEach((r) => {
+    const id = r.itemCategoryId ?? r.item_category_id;
+    const parentId = r.parentItemCategoryId ?? r.parent_item_category_id;
+
+    byId.set(id, { ...r, id, parentId, children: [] });
+  });
+
+  byId.forEach((node) => {
+    if (node.parentId && byId.has(node.parentId)) {
+      byId.get(node.parentId).children.push(node);
+    } else {
+      roots.push(node);
+    }
+  });
+
+  const sortRec = (arr) => {
+    arr.sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "fa"));
+    arr.forEach((x) => sortRec(x.children || []));
+  };
+  sortRec(roots);
+
+  return roots;
 }
 
 /* ======================
@@ -75,109 +103,94 @@ function addDaysISO(iso, days) {
 function isoToPersianDateObject(iso) {
   if (!iso) return null;
   // parse ISO as Gregorian, then convert to Persian for display
-  return new DateObject({
-    date: iso,
-    format: "YYYY-MM-DD",
-    calendar: gregorian,
-    locale: persian_fa,
-  }).convert(persian);
+  const d = new DateObject({ date: iso, calendar: gregorian, locale: persian_fa });
+  return d.convert(persian);
 }
 
-function persianValueToIso(value) {
-  if (!value) return "";
-  // value is a DateObject-like from the picker; convert to Gregorian and format ISO
-  const g = new DateObject(value).convert(gregorian);
-  return g.format("YYYY-MM-DD");
+function persianDateObjectToIso(pDateObj) {
+  if (!pDateObj) return null;
+  const g = pDateObj.convert(gregorian);
+  // ensure YYYY-MM-DD
+  const yyyy = String(g.year).padStart(4, "0");
+  const mm = String(g.month.number).padStart(2, "0");
+  const dd = String(g.day).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
 }
 
-function Modal({ open, title, onClose, children }) {
-  if (!open) return null;
+/* ======================
+   Mini Components
+   ====================== */
+function Card({ title, children }) {
   return (
-    <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="absolute inset-x-0 top-10 mx-auto w-[95%] max-w-6xl bg-white rounded-2xl shadow-lg border">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <div className="font-bold text-sm">{title}</div>
-          <button
-            onClick={onClose}
-            className="px-3 py-1 text-sm rounded-lg border hover:bg-zinc-50"
-          >
-            بستن
-          </button>
-        </div>
-        <div className="p-4 max-h-[78vh] overflow-auto">{children}</div>
-      </div>
-    </div>
-  );
-}
-
-function MiniTable({ title, subtitle, children, rightAction }) {
-  return (
-    <div className="bg-white border rounded-xl p-4">
-      <div className="flex items-center justify-between mb-3 gap-2">
-        <div>
-          <div className="font-semibold text-sm">{title}</div>
-          {subtitle ? (
-            <div className="text-[11px] text-zinc-500 mt-1">{subtitle}</div>
-          ) : null}
-        </div>
-        {rightAction ? <div>{rightAction}</div> : null}
-      </div>
+    <div className="bg-white border rounded-2xl shadow-sm p-4">
+      {title ? (
+        <div className="text-sm font-semibold text-zinc-700 mb-2">{title}</div>
+      ) : null}
       {children}
     </div>
   );
 }
 
-function PieCard({ title, rows }) {
-  const data = useMemo(
-    () =>
-      (rows || [])
-        .filter((x) => Number(x.amount) > 0)
-        .map((x) => ({
-          name: x.displayName ?? x.display_name ?? x.name ?? "-",
-          value: Number(x.amount ?? 0),
-        })),
-    [rows]
-  );
-
+function MiniTable({ title, subtitle, children }) {
   return (
-    <div className="bg-white border rounded-xl p-4 h-[360px]">
-      <div className="font-semibold text-sm mb-3">{title}</div>
+    <Card title={title}>
+      {subtitle ? <div className="text-xs text-zinc-500 mb-3">{subtitle}</div> : null}
+      {children}
+    </Card>
+  );
+}
 
-      {data.length === 0 ? (
-        <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-      ) : (
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={data}
-              dataKey="value"
-              nameKey="name"
-              innerRadius={55}
-              outerRadius={95}
-              paddingAngle={2}
-            >
-              {data.map((_, i) => (
-                <Cell key={i} fill={PIE_COLORS[i % PIE_COLORS.length]} />
-              ))}
-            </Pie>
-
-            <Tooltip formatter={(v) => formatNumber(v)} />
-            <Legend
-              layout="vertical"
-              verticalAlign="middle"
-              align="right"
-              wrapperStyle={{ fontSize: "11px" }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-      )}
+function Modal({ open, title, onClose, children }) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+      <div className="bg-white w-full max-w-5xl rounded-2xl shadow-lg border">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="text-sm font-semibold">{title}</div>
+          <button
+            className="px-3 py-1 text-xs rounded-lg border hover:bg-zinc-50"
+            onClick={onClose}
+          >
+            بستن
+          </button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
     </div>
   );
 }
 
+function PieCard({ title, rows }) {
+  const data = (rows || []).map((r) => ({
+    name: r.title ?? r.displayName ?? r.display_name ?? "-",
+    value: Number(r.amount ?? r.totalPaid ?? r.totalReceived ?? 0),
+  }));
+
+  return (
+    <Card title={title}>
+      {data.length === 0 ? (
+        <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+      ) : (
+        <div className="h-[260px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <PieChart>
+              <Pie data={data} dataKey="value" nameKey="name" outerRadius={90} label={false}>
+                {data.map((_, i) => (
+                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
+                ))}
+              </Pie>
+              <Tooltip formatter={(v) => formatNumber(v)} />
+              <Legend />
+            </PieChart>
+          </ResponsiveContainer>
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ======================
-   Extra endpoints (axios direct)
+   Custom API helpers (existing)
    ====================== */
 async function apiGetOpenDebtsCoverage({ from, to, limit }) {
   const res = await api.get("/api/v1/dashboard/open-debts-coverage", {
@@ -190,7 +203,7 @@ async function apiGetUnallocatedOverview({ from, to, limit }) {
   const res = await api.get("/api/v1/dashboard/unallocated", {
     params: { from, to, limit },
   });
-  return res.data; // { openDebts: [...], unallocatedExpenses: [...] }
+  return res.data;
 }
 
 async function apiGetRecentActivities({ limit }) {
@@ -200,7 +213,6 @@ async function apiGetRecentActivities({ limit }) {
   return res.data;
 }
 
-// Executive KPIs kept ONLY for EXP/TRN totals (visual cards)
 async function apiGetExecutiveKpis({ from, to, asOf }) {
   const res = await api.get("/api/v1/dashboard/executive-kpis", {
     params: { from, to, asOf },
@@ -208,26 +220,26 @@ async function apiGetExecutiveKpis({ from, to, asOf }) {
   return res.data;
 }
 
-function badge(type) {
-  const t = String(type || "").toUpperCase();
-  if (t === "DEBT") return "bg-amber-50 text-amber-700 border-amber-200";
-  if (t === "TRANSACTION") return "bg-blue-50 text-blue-700 border-blue-200";
-  if (t === "ALLOCATION") return "bg-emerald-50 text-emerald-700 border-emerald-200";
-  return "bg-zinc-50 text-zinc-700 border-zinc-200";
-}
-
+/* ======================
+   Page
+   ====================== */
 export default function DashboardPage() {
-  // keep ISO in state (Gregorian), but show Jalali in UI
+  // default range: last 30 days
   const [from, setFrom] = useState(addDaysISO(todayISO(), -365));
   const [to, setTo] = useState(todayISO());
+
+  const fromPersian = useMemo(() => isoToPersianDateObject(from), [from]);
+  const toPersian = useMemo(() => isoToPersianDateObject(to), [to]);
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
   const [kpis, setKpis] = useState(null);
+  const [lastRefresh, setLastRefresh] = useState(null);
+
+  // pie charts
   const [topPayers, setTopPayers] = useState([]);
   const [topReceivers, setTopReceivers] = useState([]);
-  const [lastRefresh, setLastRefresh] = useState(null);
 
   // persons drill
   const [personsSummary, setPersonsSummary] = useState([]);
@@ -235,8 +247,9 @@ export default function DashboardPage() {
   const [personPayables, setPersonPayables] = useState([]);
   const [payablesLoading, setPayablesLoading] = useState(false);
 
-  // item categories drill
-  const [itemCategoriesSummary, setItemCategoriesSummary] = useState([]);
+  // item categories drill (tree)
+  const [itemCategoriesTree, setItemCategoriesTree] = useState([]);
+  const [expandedCats, setExpandedCats] = useState(() => new Set());
   const [selectedItemCategory, setSelectedItemCategory] = useState(null);
   const [itemsByCategory, setItemsByCategory] = useState([]);
   const [itemsByCategoryLoading, setItemsByCategoryLoading] = useState(false);
@@ -259,7 +272,8 @@ export default function DashboardPage() {
 
   async function loadAll() {
     setLoading(true);
-
+    setSelectedItemCategory(null);
+    setItemsByCategory([]);
     const calls = {
       summary: () => getDashboardSummary({ from, to }),
       topPayers: () => getTopPayers({ from, to, limit: 10 }),
@@ -267,7 +281,7 @@ export default function DashboardPage() {
       lastRefresh: () => getLastRefresh(),
 
       personsSummary: () => getPersonsSummary({ from, to, limit: 50 }),
-      itemCategoriesSummary: () => getItemCategoriesSummary({ from, to, limit: 50 }),
+      itemCategoriesTree: () => getItemCategoriesTree({ from, to, onlyActive: true }),
 
       // simplified aging: still fetched, but UI shows only person + open_total
       debtAgingPersons: () => getDebtAgingByPerson({ from, to, asOf: to, limit: 50 }),
@@ -306,8 +320,23 @@ export default function DashboardPage() {
       const ps = get("personsSummary");
       if (ps !== undefined) setPersonsSummary(ps || []);
 
-      const ic = get("itemCategoriesSummary");
-      if (ic !== undefined) setItemCategoriesSummary(ic || []);
+      const ict = get("itemCategoriesTree");
+      if (ict !== undefined) {
+        setItemCategoriesTree(ict || []);
+        // default: expand root nodes once
+        setExpandedCats((prev) => {
+          if (prev && prev.size > 0) return prev;
+          const next = new Set();
+          (ict || []).forEach((r) => {
+            const parentId = r.parentItemCategoryId ?? r.parent_item_category_id;
+            if (!parentId) {
+              const id = r.itemCategoryId ?? r.item_category_id;
+              next.add(id);
+            }
+          });
+          return next;
+        });
+      }
 
       const dap = get("debtAgingPersons");
       if (dap !== undefined) setDebtAgingPersons(dap || []);
@@ -374,15 +403,18 @@ export default function DashboardPage() {
   }
 
   async function openItemCategoryDrill(c) {
+    const id = c.itemCategoryId ?? c.item_category_id;
+    const title = c.title ?? "-";
+
     setSelectedItemCategory({
-      itemCategoryId: c.itemCategoryId,
-      title: c.title,
+      itemCategoryId: id,
+      title,
     });
     setItemsByCategory([]);
     setItemsByCategoryLoading(true);
     try {
       const rows = await getItemsByCategory({
-        itemCategoryId: c.itemCategoryId,
+        itemCategoryId: id,
         from,
         to,
         limit: 150,
@@ -407,107 +439,98 @@ export default function DashboardPage() {
         <div>
           <div className="text-lg font-bold">داشبورد</div>
           <div className="text-xs text-zinc-500">
-            {lastRefresh?.finishedAt
-              ? `آخرین بروزرسانی: ${lastRefresh.finishedAt}`
-              : lastRefresh?.startedAt
-              ? `آخرین بروزرسانی: ${lastRefresh.startedAt}`
+            {lastRefresh?.refreshedAt
+              ? `آخرین بروزرسانی: ${lastRefresh.refreshedAt}`
               : "آخرین بروزرسانی: -"}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          {/* ✅ Jalali range picker (UI Jalali, state ISO) */}
-          <div className="flex items-center gap-2 bg-white border rounded-xl px-3 py-2">
-            <label className="text-xs text-zinc-600">از</label>
+        <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-500">از</span>
             <DatePicker
-              value={isoToPersianDateObject(from)}
-              onChange={(val) => setFrom(persianValueToIso(val))}
               calendar={persian}
               locale={persian_fa}
-              format="YYYY/MM/DD"
-              calendarPosition="bottom-right"
-              inputClass="text-xs outline-none bg-transparent w-[120px]"
+              value={fromPersian}
+              onChange={(d) => {
+                const iso = persianDateObjectToIso(d);
+                if (iso) setFrom(iso);
+              }}
+              inputClass="border rounded-lg px-3 py-2 text-sm w-[150px]"
               containerClassName="rtl"
             />
+          </div>
 
-            <label className="text-xs text-zinc-600">تا</label>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-zinc-500">تا</span>
             <DatePicker
-              value={isoToPersianDateObject(to)}
-              onChange={(val) => setTo(persianValueToIso(val))}
               calendar={persian}
               locale={persian_fa}
-              format="YYYY/MM/DD"
-              calendarPosition="bottom-right"
-              inputClass="text-xs outline-none bg-transparent w-[120px]"
+              value={toPersian}
+              onChange={(d) => {
+                const iso = persianDateObjectToIso(d);
+                if (iso) setTo(iso);
+              }}
+              inputClass="border rounded-lg px-3 py-2 text-sm w-[150px]"
               containerClassName="rtl"
             />
           </div>
 
           <button
+            className="px-4 py-2 rounded-lg border text-sm hover:bg-zinc-50 disabled:opacity-50"
             onClick={loadAll}
             disabled={loading}
-            className="bg-white border rounded-xl px-4 py-2 text-sm hover:bg-zinc-50 disabled:opacity-60"
           >
-            {loading ? "در حال دریافت..." : "اعمال"}
+            اعمال
           </button>
 
           <button
+            className="px-4 py-2 rounded-lg bg-black text-white text-sm hover:bg-black/90 disabled:opacity-50"
             onClick={onRefreshMart}
             disabled={refreshing}
-            className="bg-zinc-900 text-white rounded-xl px-4 py-2 text-sm hover:bg-zinc-800 disabled:opacity-60"
           >
-            {refreshing ? "در حال بروزرسانی..." : "رفرش داده‌ها"}
+            {refreshing ? "در حال بروزرسانی..." : "بروزرسانی Mart"}
           </button>
         </div>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
-        <div className="bg-white border rounded-xl p-4">
-          <div className="text-xs text-zinc-500">مجموع تراکنش‌ها</div>
-          <div className="text-lg font-bold mt-1">
-            {formatNumber(kpis?.totalTransactionsAmount)}
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <Card title="جمع بدهی‌ها (DEBTS)">
+          <div className="text-2xl font-bold">
+            {formatNumber(kpis?.totalDebtAmount ?? kpis?.total_debt_amount)}
           </div>
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <div className="text-xs text-zinc-500">تعداد تراکنش‌ها</div>
-          <div className="text-lg font-bold mt-1">
-            {formatNumber(kpis?.transactionsCount)}
+          <div className="text-xs text-zinc-500 mt-1">بازه تاریخ انتخاب‌شده</div>
+        </Card>
+
+        <Card title="جمع پرداخت‌ها (PAYMENTS)">
+          <div className="text-2xl font-bold">
+            {formatNumber(kpis?.totalPaymentAmount ?? kpis?.total_payment_amount)}
           </div>
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <div className="text-xs text-zinc-500">جمع بدهی‌ها (اقلام)</div>
-          <div className="text-lg font-bold mt-1">
-            {formatNumber(kpis?.totalDebtAmount)}
+          <div className="text-xs text-zinc-500 mt-1">بازه تاریخ انتخاب‌شده</div>
+        </Card>
+
+        <Card title="جمع دریافتی‌ها (RECEIPTS)">
+          <div className="text-2xl font-bold">
+            {formatNumber(kpis?.totalReceiptAmount ?? kpis?.total_receipt_amount)}
           </div>
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <div className="text-xs text-zinc-500">جمع تخصیص‌ها</div>
-          <div className="text-lg font-bold mt-1">
-            {formatNumber(kpis?.totalAllocatedAmount)}
-          </div>
-        </div>
-        <div className="bg-white border rounded-xl p-4">
-          <div className="text-xs text-zinc-500">مانده بدهی (تقریبی)</div>
-          <div className="text-lg font-bold mt-1">
-            {formatNumber(kpis?.outstandingDebtAmount)}
-          </div>
-        </div>
+          <div className="text-xs text-zinc-500 mt-1">بازه تاریخ انتخاب‌شده</div>
+        </Card>
       </div>
 
-      {/* Executive (simplified) */}
+      {/* Executive totals (2 cards) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-white border rounded-xl p-4">
+        <div className="bg-white border rounded-2xl shadow-sm p-4">
           <div className="text-xs text-zinc-500">جمع هزینه‌ها (EXP)</div>
           <div className="text-lg font-bold mt-1">
             {formatNumber(execKpis?.totalExpenseAmount ?? execKpis?.total_expense_amount)}
           </div>
           <div className="text-[11px] text-zinc-500 mt-1">
-            برای تخصیص‌ها فقط هزینه‌ها مبنا هستند.
+            شامل پرداخت‌هایی که از نوع هزینه ثبت شده‌اند.
           </div>
         </div>
 
-        <div className="bg-white border rounded-xl p-4">
+        <div className="bg-white border rounded-2xl shadow-sm p-4">
           <div className="text-xs text-zinc-500">جمع تنخواه (TRN)</div>
           <div className="text-lg font-bold mt-1">
             {formatNumber(execKpis?.totalTankhahAmount ?? execKpis?.total_tankhah_amount)}
@@ -524,40 +547,151 @@ export default function DashboardPage() {
         <PieCard title="بیشترین دریافت‌کنندگان" rows={topReceivers} />
       </div>
 
-      {/* Item Categories drill */}
+      {/* Item Categories drill (TREE + INLINE ITEMS) */}
       <MiniTable
         title="دسته‌بندی‌های کالا/خدمات (Drill)"
-        subtitle="کلیک روی هر دسته برای مشاهده آیتم‌ها"
+        subtitle="درخت را باز/بسته کنید؛ روی دسته کلیک کنید تا آیتم‌های آن (و زیرمجموعه‌ها) نمایش داده شود"
       >
-        {itemCategoriesSummary.length === 0 ? (
+        {itemCategoriesTree.length === 0 ? (
           <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
         ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead>
-                <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">دسته</th>
-                  <th className="text-left py-2">جمع بدهی</th>
-                  <th className="text-left py-2">پرداخت/تخصیص</th>
-                  <th className="text-left py-2">مانده</th>
-                </tr>
-              </thead>
-              <tbody>
-                {itemCategoriesSummary.map((c) => (
-                  <tr
-                    key={c.itemCategoryId}
-                    className="border-b hover:bg-zinc-50 cursor-pointer transition"
-                    onClick={() => openItemCategoryDrill(c)}
-                    title="کلیک برای Drill"
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+            {/* Left: Tree */}
+            <div className="border rounded-xl p-3">
+              <div className="text-sm font-semibold mb-2">درخت دسته‌بندی</div>
+
+              <div className="max-h-[420px] overflow-auto">
+                {(() => {
+                  const roots = buildCategoryTree(itemCategoriesTree);
+
+                  const Row = ({ node, depth }) => {
+                    const id = node.id;
+                    const hasChildren = (node.children?.length || 0) > 0;
+                    const isOpen = expandedCats.has(id);
+
+                    const amount = node.amount ?? node.totalDebt ?? node.total_debt;
+                    const allocatedAmount =
+                      node.allocatedAmount ??
+                      node.allocated_amount ??
+                      node.totalAllocated ??
+                      node.total_allocated;
+                    const remaining = node.remaining ?? node.remain ?? node.remained;
+
+                    return (
+                      <div>
+                        <div
+                          className={`flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-zinc-50 cursor-pointer ${
+                            selectedItemCategory?.itemCategoryId === id ? "bg-zinc-100" : ""
+                          }`}
+                          style={{ paddingRight: 8 + depth * 18 }}
+                          onClick={() =>
+                            openItemCategoryDrill({
+                              itemCategoryId: id,
+                              title: node.title,
+                            })
+                          }
+                        >
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!hasChildren) return;
+                              setExpandedCats((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(id)) next.delete(id);
+                                else next.add(id);
+                                return next;
+                              });
+                            }}
+                            className={`w-6 h-6 flex items-center justify-center rounded-md border bg-white hover:bg-zinc-50 ${
+                              hasChildren ? "" : "opacity-40 cursor-default"
+                            }`}
+                            title={hasChildren ? (isOpen ? "بستن" : "باز کردن") : "بدون زیرمجموعه"}
+                          >
+                            {hasChildren ? (isOpen ? "▾" : "▸") : "•"}
+                          </button>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="text-sm truncate">{node.title}</div>
+                            <div className="text-[11px] text-zinc-500 font-mono mt-0.5">
+                              بدهی: {formatNumber(amount)} | تخصیص: {formatNumber(allocatedAmount)} | مانده:{" "}
+                              {formatNumber(remaining)}
+                            </div>
+                          </div>
+                        </div>
+
+                        {hasChildren && isOpen ? (
+                          <div>
+                            {node.children.map((ch) => (
+                              <Row key={ch.id} node={ch} depth={depth + 1} />
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  };
+
+                  return roots.map((r) => <Row key={r.id} node={r} depth={0} />);
+                })()}
+              </div>
+            </div>
+
+            {/* Right: Items list (category + descendants) */}
+            <div className="border rounded-xl p-3">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <div>
+                  <div className="text-sm font-semibold">آیتم‌ها</div>
+                  <div className="text-[11px] text-zinc-500">
+                    {selectedItemCategory?.title
+                      ? `دسته انتخاب‌شده: ${selectedItemCategory.title} (شامل زیرمجموعه‌ها)`
+                      : "برای نمایش، یک دسته را از درخت انتخاب کنید"}
+                  </div>
+                </div>
+
+                {selectedItemCategory ? (
+                  <button
+                    className="px-3 py-1 text-xs rounded-lg border hover:bg-zinc-50"
+                    onClick={() => {
+                      setSelectedItemCategory(null);
+                      setItemsByCategory([]);
+                    }}
                   >
-                    <td className="py-2 text-right">{c.title}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(c.amount)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(c.allocatedAmount)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(c.remaining)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    پاک کردن انتخاب
+                  </button>
+                ) : null}
+              </div>
+
+              {itemsByCategoryLoading ? (
+                <div className="text-xs text-zinc-500">در حال دریافت...</div>
+              ) : !selectedItemCategory ? (
+                <div className="text-xs text-zinc-500">یک دسته را انتخاب کنید.</div>
+              ) : itemsByCategory.length === 0 ? (
+                <div className="text-xs text-zinc-500">آیتمی یافت نشد</div>
+              ) : (
+                <div className="overflow-auto">
+                  <table className="min-w-[900px] w-full text-sm">
+                    <thead>
+                      <tr className="text-xs text-zinc-600 border-b">
+                        <th className="text-right py-2">آیتم</th>
+                        <th className="text-left py-2">جمع بدهی</th>
+                        <th className="text-left py-2">پرداخت/تخصیص</th>
+                        <th className="text-left py-2">مانده</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {itemsByCategory.map((it, idx) => (
+                        <tr key={`${it.itemId ?? it.item_id ?? idx}`} className="border-b">
+                          <td className="py-2 text-right">{it.title}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(it.amount)}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(it.allocatedAmount)}</td>
+                          <td className="py-2 text-left font-mono">{formatNumber(it.remaining)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
         )}
       </MiniTable>
@@ -618,12 +752,8 @@ export default function DashboardPage() {
               <tbody>
                 {debtAgingPersons.map((r) => (
                   <tr key={r.person_id ?? r.personId} className="border-b">
-                    <td className="py-2 text-right">
-                      {r.display_name ?? r.displayName}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.open_total ?? r.openTotal)}
-                    </td>
+                    <td className="py-2 text-right">{r.display_name ?? r.displayName}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.open_total ?? r.openTotal)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -649,218 +779,136 @@ export default function DashboardPage() {
                   <th className="text-right py-2">شخص</th>
                   <th className="text-right py-2">پروژه</th>
                   <th className="text-left py-2">جمع بدهی</th>
-                  <th className="text-left py-2">تخصیص</th>
+                  <th className="text-left py-2">جمع پوشش</th>
                   <th className="text-left py-2">مانده</th>
-                  <th className="text-right py-2">پوشش</th>
                 </tr>
               </thead>
               <tbody>
-                {openDebtsCoverage.map((r) => {
-                  const debtId = r.debt_header_id ?? r.debtHeaderId;
-                  const debtDate = r.debt_date ?? r.debtDate;
-                  const personName = r.person_name ?? r.personName;
-                  const projectTitle = r.project_title ?? r.projectTitle;
-
-                  const totalDebt = r.total_debt ?? r.totalDebt;
-                  const allocated = r.allocated_amount ?? r.allocatedAmount;
-                  const remaining = r.remaining ?? 0;
-                  const pct = Number(r.covered_percent ?? r.coveredPercent ?? 0);
-
-                  return (
-                    <tr key={debtId} className="border-b hover:bg-zinc-50 transition">
-                      <td className="py-2 text-right font-mono">{debtId}</td>
-                      <td className="py-2 text-right font-mono">{debtDate}</td>
-                      <td className="py-2 text-right">{personName}</td>
-                      <td className="py-2 text-right">{projectTitle}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(totalDebt)}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(allocated)}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(remaining)}</td>
-                      <td className="py-2 text-right">
-                        <div className="flex items-center gap-2 justify-end">
-                          <div className="w-28 h-2 bg-zinc-200 rounded-full overflow-hidden">
-                            <div
-                              className="h-2 bg-emerald-600"
-                              style={{
-                                width: `${Math.max(0, Math.min(100, pct))}%`,
-                              }}
-                            />
-                          </div>
-                          <div className="text-[11px] font-mono w-12 text-left">
-                            {pct.toFixed(0)}%
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                {openDebtsCoverage.map((r, idx) => (
+                  <tr key={`${r.debt_id ?? r.debtId ?? idx}`} className="border-b">
+                    <td className="py-2 text-right">{r.debt_id ?? r.debtId}</td>
+                    <td className="py-2 text-right">{r.debt_date ?? r.debtDate}</td>
+                    <td className="py-2 text-right">{r.person_name ?? r.personName}</td>
+                    <td className="py-2 text-right">{r.project_title ?? r.projectTitle}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.total_debt ?? r.totalDebt)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.total_alloc ?? r.totalAlloc)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
         )}
       </MiniTable>
 
-      {/* Unallocated overview (kept) */}
-      <MiniTable
-        title="تخصیص‌نیافته‌ها"
-        subtitle="بدهی‌های باز + هزینه‌های بدون تخصیص (تنخواه/TRN نمایش داده نمی‌شود)"
-      >
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Open Debts */}
-          <div className="bg-white border rounded-xl p-3">
-            <div className="text-sm font-semibold mb-2">بدهی‌های باز</div>
-
-            {unallocatedOpenDebts.length === 0 ? (
-              <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-            ) : (
-              <div className="overflow-auto">
-                <table className="min-w-[900px] w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-zinc-600 border-b">
-                      <th className="text-right py-2">ID</th>
-                      <th className="text-right py-2">تاریخ</th>
-                      <th className="text-right py-2">شخص</th>
-                      <th className="text-right py-2">پروژه</th>
-                      <th className="text-left py-2">جمع بدهی</th>
-                      <th className="text-left py-2">تخصیص</th>
-                      <th className="text-left py-2">مانده</th>
+      {/* Unallocated Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <MiniTable title="بدهی‌های باز بدون تخصیص" subtitle="Top 50">
+          {unallocatedOpenDebts.length === 0 ? (
+            <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+          ) : (
+            <div className="overflow-auto">
+              <table className="min-w-[900px] w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-zinc-600 border-b">
+                    <th className="text-right py-2">ID</th>
+                    <th className="text-right py-2">تاریخ</th>
+                    <th className="text-right py-2">شخص</th>
+                    <th className="text-right py-2">پروژه</th>
+                    <th className="text-left py-2">جمع بدهی</th>
+                    <th className="text-left py-2">مانده</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unallocatedOpenDebts.map((r, idx) => (
+                    <tr key={`${r.debt_id ?? r.debtId ?? idx}`} className="border-b">
+                      <td className="py-2 text-right">{r.debt_id ?? r.debtId}</td>
+                      <td className="py-2 text-right">{r.debt_date ?? r.debtDate}</td>
+                      <td className="py-2 text-right">{r.person_name ?? r.personName}</td>
+                      <td className="py-2 text-right">{r.project_title ?? r.projectTitle}</td>
+                      <td className="py-2 text-left font-mono">{formatNumber(r.total_debt ?? r.totalDebt)}</td>
+                      <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {unallocatedOpenDebts.map((r, idx) => {
-                      const debtId = r.debt_header_id ?? r.debtHeaderId ?? idx;
-                      const debtDate = r.debt_date ?? r.debtDate ?? "-";
-                      const personName =
-                        r.person_name ??
-                        r.personName ??
-                        r.display_name ??
-                        r.displayName ??
-                        "-";
-                      const projectTitle = r.project_title ?? r.projectTitle ?? "-";
-                      const totalDebt = r.total_debt ?? r.totalDebt ?? 0;
-                      const allocated = r.allocated_amount ?? r.allocatedAmount ?? 0;
-                      const remaining = r.remaining ?? 0;
-
-                      return (
-                        <tr key={debtId} className="border-b hover:bg-zinc-50 transition">
-                          <td className="py-2 text-right font-mono">{debtId}</td>
-                          <td className="py-2 text-right font-mono">{debtDate}</td>
-                          <td className="py-2 text-right">{personName}</td>
-                          <td className="py-2 text-right">{projectTitle}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(totalDebt)}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(allocated)}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(remaining)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* Unallocated EXP Transactions */}
-          <div className="bg-white border rounded-xl p-3">
-            <div className="text-sm font-semibold mb-2">
-              هزینه‌های بدون تخصیص (فقط EXP)
+                  ))}
+                </tbody>
+              </table>
             </div>
+          )}
+        </MiniTable>
 
-            {unallocatedExpenseTxs.length === 0 ? (
-              <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-            ) : (
-              <div className="overflow-auto">
-                <table className="min-w-[980px] w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-zinc-600 border-b">
-                      <th className="text-right py-2">ID</th>
-                      <th className="text-right py-2">تاریخ</th>
-                      <th className="text-right py-2">از</th>
-                      <th className="text-right py-2">به</th>
-                      <th className="text-right py-2">پروژه</th>
-                      <th className="text-left py-2">مبلغ</th>
-                      <th className="text-left py-2">تخصیص</th>
-                      <th className="text-left py-2">مانده</th>
+        <MiniTable title="هزینه‌های بدون تخصیص" subtitle="Top 50">
+          {unallocatedExpenseTxs.length === 0 ? (
+            <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+          ) : (
+            <div className="overflow-auto">
+              <table className="min-w-[900px] w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-zinc-600 border-b">
+                    <th className="text-right py-2">ID</th>
+                    <th className="text-right py-2">تاریخ</th>
+                    <th className="text-right py-2">شخص</th>
+                    <th className="text-right py-2">پروژه</th>
+                    <th className="text-left py-2">مبلغ</th>
+                    <th className="text-left py-2">تخصیص</th>
+                    <th className="text-left py-2">مانده</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {unallocatedExpenseTxs.map((r, idx) => (
+                    <tr key={`${r.transaction_id ?? r.transactionId ?? idx}`} className="border-b">
+                      <td className="py-2 text-right">{r.transaction_id ?? r.transactionId}</td>
+                      <td className="py-2 text-right">{r.transaction_date ?? r.transactionDate}</td>
+                      <td className="py-2 text-right">{r.person_name ?? r.personName}</td>
+                      <td className="py-2 text-right">{r.project_title ?? r.projectTitle}</td>
+                      <td className="py-2 text-left font-mono">{formatNumber(r.amount)}</td>
+                      <td className="py-2 text-left font-mono">{formatNumber(r.allocated)}</td>
+                      <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {unallocatedExpenseTxs.map((r, idx) => {
-                      const txId = r.transaction_id ?? r.transactionId ?? idx;
-                      const txDate = r.tx_date ?? r.txDate ?? "-";
-                      const fromName = r.from_person_name ?? r.fromPersonName ?? "-";
-                      const toName = r.to_person_name ?? r.toPersonName ?? "-";
-                      const projectTitle = r.project_title ?? r.projectTitle ?? "-";
-                      const amount = r.amount ?? 0;
-                      const allocated = r.allocated_amount ?? r.allocatedAmount ?? 0;
-                      const remaining = r.remaining ?? 0;
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </MiniTable>
+      </div>
 
-                      return (
-                        <tr key={txId} className="border-b hover:bg-zinc-50 transition">
-                          <td className="py-2 text-right font-mono">{txId}</td>
-                          <td className="py-2 text-right font-mono">{txDate}</td>
-                          <td className="py-2 text-right">{fromName}</td>
-                          <td className="py-2 text-right">{toName}</td>
-                          <td className="py-2 text-right">{projectTitle}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(amount)}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(allocated)}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(remaining)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      </MiniTable>
-
-      {/* Recent Activity Feed (visual) */}
-      <MiniTable title="آخرین فعالیت‌ها" subtitle="ثبت بدهی، تراکنش و تخصیص‌ها">
+      {/* Recent activities */}
+      <MiniTable title="فعالیت‌های اخیر" subtitle="آخرین ۲۰ رویداد">
         {recentActivities.length === 0 ? (
           <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
         ) : (
-          <div className="space-y-2">
-            {recentActivities.map((a, idx) => {
-              const type = a.activityType ?? a.activity_type;
-              const time = a.activityTime ?? a.activity_time;
-              const title = a.title ?? "-";
-              const amount = a.amount ?? 0;
-
-              const actor = a.actor ?? "-";
-              const action = a.action ?? a.audit_action ?? "-";
-              const success = (a.success === true) ? "✅" : (a.success === false ? "❌" : "");
-
-              return (
-                <div
-                  key={idx}
-                  className="flex items-start justify-between gap-3 border rounded-xl px-3 py-2 text-sm hover:bg-zinc-50 transition"
-                >
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-[11px] px-2 py-0.5 rounded-full border ${badge(type)}`}>
-                        {type}
-                      </span>
-                      <div className="text-xs text-zinc-500">
-                        {time} • {success} {actor} • {action}
-                      </div>
-                    </div>
-                    <div className="font-medium mt-1 truncate">{title}</div>
-                  </div>
-
-                  <div className="font-mono whitespace-nowrap">{formatNumber(amount)}</div>
-                </div>
-              );
-            })}
+          <div className="overflow-auto">
+            <table className="min-w-[900px] w-full text-sm">
+              <thead>
+                <tr className="text-xs text-zinc-600 border-b">
+                  <th className="text-right py-2">تاریخ</th>
+                  <th className="text-right py-2">نوع</th>
+                  <th className="text-right py-2">توضیح</th>
+                  <th className="text-left py-2">مبلغ</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recentActivities.map((r, idx) => (
+                  <tr key={`${r.id ?? idx}`} className="border-b">
+                    <td className="py-2 text-right">{r.created_at ?? r.createdAt}</td>
+                    <td className="py-2 text-right">{r.type}</td>
+                    <td className="py-2 text-right">{r.description}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.amount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </MiniTable>
 
-      {/* Modals */}
+      {/* Person Payables Modal */}
       <Modal
         open={!!selectedPerson}
         title={
           selectedPerson?.displayName
             ? `بدهی‌های قابل پرداخت: ${selectedPerson.displayName}`
-            : "بدهی‌های قابل پرداخت"
+            : "بدهی‌ها"
         }
         onClose={() => {
           setSelectedPerson(null);
@@ -873,67 +921,26 @@ export default function DashboardPage() {
           <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
         ) : (
           <div className="overflow-auto">
-            <table className="min-w-[900px] w-full text-sm">
+            <table className="min-w-[1200px] w-full text-sm">
               <thead>
                 <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">کد بدهی</th>
+                  <th className="text-right py-2">ID</th>
                   <th className="text-right py-2">تاریخ</th>
                   <th className="text-right py-2">پروژه</th>
-                  <th className="text-left py-2">مبلغ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {personPayables.map((r, idx) => (
-                  <tr
-                    key={`${r.debtHeaderId ?? r.debt_header_id ?? idx}`}
-                    className="border-b"
-                  >
-                    <td className="py-2 text-right">{r.debtHeaderId ?? r.debt_header_id}</td>
-                    <td className="py-2 text-right">{r.debtDate ?? r.debt_date}</td>
-                    <td className="py-2 text-right">{r.projectTitle ?? r.project_title}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Modal>
-
-      <Modal
-        open={!!selectedItemCategory}
-        title={
-          selectedItemCategory?.title
-            ? `آیتم‌های دسته‌بندی: ${selectedItemCategory.title}`
-            : "آیتم‌ها"
-        }
-        onClose={() => {
-          setSelectedItemCategory(null);
-          setItemsByCategory([]);
-        }}
-      >
-        {itemsByCategoryLoading ? (
-          <div className="text-xs text-zinc-500">در حال دریافت...</div>
-        ) : itemsByCategory.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead>
-                <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">آیتم</th>
                   <th className="text-left py-2">جمع بدهی</th>
                   <th className="text-left py-2">پرداخت/تخصیص</th>
                   <th className="text-left py-2">مانده</th>
                 </tr>
               </thead>
               <tbody>
-                {itemsByCategory.map((it, idx) => (
-                  <tr key={`${it.itemId ?? it.item_id ?? idx}`} className="border-b">
-                    <td className="py-2 text-right">{it.title}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(it.amount)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(it.allocatedAmount)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(it.remaining)}</td>
+                {personPayables.map((r, idx) => (
+                  <tr key={`${r.debtId ?? r.debt_id ?? idx}`} className="border-b">
+                    <td className="py-2 text-right">{r.debtId ?? r.debt_id}</td>
+                    <td className="py-2 text-right">{r.debtDate ?? r.debt_date}</td>
+                    <td className="py-2 text-right">{r.projectTitle ?? r.project_title}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.totalDebt ?? r.total_debt)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.totalAllocated ?? r.total_allocated)}</td>
+                    <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
                   </tr>
                 ))}
               </tbody>

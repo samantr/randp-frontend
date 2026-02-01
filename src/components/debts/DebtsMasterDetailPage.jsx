@@ -44,7 +44,7 @@ function nowLocalISOForInput() {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(
-    d.getHours()
+    d.getHours(),
   )}:${pad(d.getMinutes())}`;
 }
 
@@ -111,7 +111,6 @@ function persianValueToIso(value) {
   return toLatinDigits(g.format("YYYY-MM-DD"));
 }
 
-
 function isoToJalaliText(iso) {
   const d = isoToPersianDateObject(iso);
   return d ? d.format("YYYY/MM/DD") : "";
@@ -158,13 +157,19 @@ function parseStateFromUrl(sp) {
       ? Number(sidRaw)
       : null;
 
+  const iidRaw = sp.get("iid");
+  const itemId =
+    iidRaw != null && iidRaw !== "" && Number.isFinite(Number(iidRaw))
+      ? Number(iidRaw)
+      : null;
+
   const hf = { ...EMPTY_HF };
   for (const k of HF_KEYS) hf[k] = sp.get(`hf_${k}`) ?? "";
 
-  return { pi, sortBy, sortDir, sid, hf };
+  return { pi, sortBy, sortDir, sid, itemId, hf };
 }
 
-function buildUrlParams({ pi, sortBy, sortDir, sid, hf }) {
+function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, hf }) {
   const obj = {};
   obj.pi = String(pi ?? 0);
 
@@ -172,6 +177,8 @@ function buildUrlParams({ pi, sortBy, sortDir, sid, hf }) {
   if (sortBy) obj.sd = sortDir === "desc" ? "desc" : "asc";
 
   if (sid != null && sid !== "") obj.sid = String(sid);
+
+  if (itemId != null && itemId !== "") obj.iid = String(itemId);
 
   for (const k of HF_KEYS) {
     const v = hf?.[k];
@@ -214,9 +221,15 @@ function toLatinDigits(input) {
   let out = "";
   for (const ch of s) {
     const iFa = fa.indexOf(ch);
-    if (iFa >= 0) { out += String(iFa); continue; }
+    if (iFa >= 0) {
+      out += String(iFa);
+      continue;
+    }
     const iAr = ar.indexOf(ch);
-    if (iAr >= 0) { out += String(iAr); continue; }
+    if (iAr >= 0) {
+      out += String(iAr);
+      continue;
+    }
     out += ch;
   }
   return out;
@@ -236,6 +249,10 @@ export default function DebtsMasterDetailPage() {
   const [loadingHeaders, setLoadingHeaders] = useState(false);
   const [headers, setHeaders] = useState([]);
   const [selectedDebtId, setSelectedDebtId] = useState(initial.sid);
+
+  // server-side filter: debts that contain selected item
+  const [itemId, setItemId] = useState(initial.itemId ?? null);
+  const [itemFilter, setItemFilter] = useState(null);
 
   // detail
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -296,6 +313,7 @@ export default function DebtsMasterDetailPage() {
     setSortBy(parsed.sortBy);
     setSortDir(parsed.sortDir || "asc");
     setHf(parsed.hf);
+    setItemId(parsed.itemId ?? null);
 
     if (parsed.sid != null) setSelectedDebtId(parsed.sid);
   }, [location.search]);
@@ -317,6 +335,7 @@ export default function DebtsMasterDetailPage() {
         sortBy,
         sortDir,
         sid: selectedDebtId,
+        itemId,
         hf,
       });
 
@@ -395,6 +414,36 @@ export default function DebtsMasterDetailPage() {
     })();
   }, []);
 
+  useEffect(() => {
+    let alive = true;
+
+    // reset selection when filter changes
+    autoPickFirstRef.current = true;
+    setPageIndex(0);
+    setSelectedDebtId(null);
+
+    if (!itemId) {
+      setItemFilter(null);
+      return;
+    }
+
+    (async () => {
+      try {
+        const items = safeList(await getItems());
+        const found = items.find((x) => Number(x?.id) === Number(itemId));
+        if (!alive) return;
+        setItemFilter(found || { id: itemId, title: `#${itemId}` });
+      } catch {
+        if (!alive) return;
+        setItemFilter({ id: itemId, title: `#${itemId}` });
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [itemId]);
+
   // lookups for form
   const fetchProjects = useCallback(async ({ q }) => {
     const data = safeList(await getProjects());
@@ -409,8 +458,8 @@ export default function DebtsMasterDetailPage() {
     if (!nq) return persons;
     return persons.filter((x) =>
       `${x?.name || ""} ${x?.lastName || ""} ${x?.companyName || ""}`.includes(
-        nq
-      )
+        nq,
+      ),
     );
   }, []);
 
@@ -434,7 +483,7 @@ export default function DebtsMasterDetailPage() {
 
     setLoadingHeaders(true);
     try {
-      const data = await getAllDebts();
+      const data = await getAllDebts({ itemId });
       const rows = Array.isArray(data) ? data : [];
       setHeaders(rows);
 
@@ -447,7 +496,7 @@ export default function DebtsMasterDetailPage() {
     } finally {
       setLoadingHeaders(false);
     }
-  }, [mode, selectedDebtId]);
+  }, [mode, selectedDebtId, itemId]);
 
   useEffect(() => {
     loadHeaders();
@@ -466,10 +515,10 @@ export default function DebtsMasterDetailPage() {
       const personId = getAny(r, ["person_id", "personId", "personID"]);
 
       const projectTitle = normalizeFaText(
-        projectId ? projectsMap.get(projectId) || `#${projectId}` : ""
+        projectId ? projectsMap.get(projectId) || `#${projectId}` : "",
       );
       const personName = normalizeFaText(
-        personId ? personsMap.get(personId) || `#${personId}` : ""
+        personId ? personsMap.get(personId) || `#${personId}` : "",
       );
 
       // NOTE: filter uses raw date_due string (ISO). Display is Jalali, but filtering is unchanged.
@@ -625,7 +674,7 @@ export default function DebtsMasterDetailPage() {
         if (mySeq === requestSeqRef.current) setLoadingDetail(false);
       }
     },
-    [mode, selectedDebtId]
+    [mode, selectedDebtId],
   );
 
   useEffect(() => {
@@ -653,7 +702,7 @@ export default function DebtsMasterDetailPage() {
 
   function updateLine(idx, patch) {
     setEditLines((prev) =>
-      (prev || []).map((l, i) => (i === idx ? { ...l, ...patch } : l))
+      (prev || []).map((l, i) => (i === idx ? { ...l, ...patch } : l)),
     );
   }
 
@@ -739,7 +788,7 @@ export default function DebtsMasterDetailPage() {
           qnt: Number(l.qnt),
           unitPrice: Number(l.unitPrice),
           dsc: l.dsc || "",
-        }))
+        })),
       );
     } catch (e) {
       toast.error(getApiErrorMessage(e, "خطا در دریافت بدهی برای ویرایش"));
@@ -781,7 +830,7 @@ export default function DebtsMasterDetailPage() {
     const ids = editLines.map((l) => l.item.id);
     if (new Set(ids).size !== ids.length) {
       return toast.error(
-        "هر کالا/خدمت فقط یک بار می‌تواند در خطوط بدهی ثبت شود"
+        "هر کالا/خدمت فقط یک بار می‌تواند در خطوط بدهی ثبت شود",
       );
     }
 
@@ -815,7 +864,7 @@ export default function DebtsMasterDetailPage() {
       await loadHeaders();
     } catch (e) {
       toast.error(
-        getApiErrorMessage(e, isEdit ? "خطا در ویرایش" : "خطا در ثبت بدهی")
+        getApiErrorMessage(e, isEdit ? "خطا در ویرایش" : "خطا در ثبت بدهی"),
       );
     } finally {
       setSaving(false);
@@ -830,7 +879,7 @@ export default function DebtsMasterDetailPage() {
       await loadHeaders();
     } catch (e) {
       toast.error(
-        getApiErrorMessage(e, "حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)")
+        getApiErrorMessage(e, "حذف ممکن نیست (ممکن است تخصیص/سند داشته باشد)"),
       );
     }
   }
@@ -843,6 +892,39 @@ export default function DebtsMasterDetailPage() {
           <div className="flex items-center justify-between mb-2">
             <div className="font-semibold">Headers</div>
             <Button onClick={startCreate}>+ بدهی جدید</Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+            <LookupSelect
+              label="فیلتر کالا/خدمت (سرور)"
+              value={itemFilter}
+              onChange={(opt) => {
+                setItemId(opt?.id ?? null);
+              }}
+              fetchOptions={fetchItems}
+              display={(opt) => opt?.title || `#${opt?.id}`}
+              placeholder="جستجوی کالا/خدمت..."
+            />
+
+            <div className="flex items-end">
+              <Button
+                variant="secondary"
+                onClick={() => setItemId(null)}
+                disabled={!itemId}
+              >
+                پاک کردن فیلتر کالا/خدمت
+              </Button>
+            </div>
+
+            <div className="text-xs text-zinc-500 flex items-end">
+              {itemId ? (
+                <span>
+                  فقط بدهی‌هایی که این کالا/خدمت را دارند نمایش داده می‌شود.
+                </span>
+              ) : (
+                <span>فیلتر کالا/خدمت فعال نیست.</span>
+              )}
+            </div>
           </div>
 
           <div className="flex items-center justify-between gap-2 mb-2 text-sm">
@@ -1087,7 +1169,7 @@ export default function DebtsMasterDetailPage() {
                               variant="secondary"
                               onClick={() =>
                                 navigate(
-                                  `/debts/${r.debt_id}/allocations?return=${returnTo}`
+                                  `/debts/${r.debt_id}/allocations?return=${returnTo}`,
                                 )
                               }
                             >
@@ -1098,7 +1180,7 @@ export default function DebtsMasterDetailPage() {
                               variant="secondary"
                               onClick={() =>
                                 navigate(
-                                  `/debts/${r.debt_id}/documents?return=${returnTo}`
+                                  `/debts/${r.debt_id}/documents?return=${returnTo}`,
                                 )
                               }
                             >
@@ -1179,11 +1261,13 @@ export default function DebtsMasterDetailPage() {
               <label className="text-xs text-zinc-600">تاریخ ثبت</label>
               <DatePicker
                 value={isoToPersianDateObject(
-                  String(dateRegistered || "").slice(0, 10)
+                  String(dateRegistered || "").slice(0, 10),
                 )}
                 onChange={(val) => {
                   const iso = persianValueToIso(val);
-                  setDateRegistered((prev) => setDatePartForDatetime(prev, iso));
+                  setDateRegistered((prev) =>
+                    setDatePartForDatetime(prev, iso),
+                  );
                 }}
                 calendar={persian}
                 locale={persian_fa}

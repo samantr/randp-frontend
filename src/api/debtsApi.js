@@ -34,7 +34,12 @@ export async function getOpenDebts({ projectId, personId }) {
 }
 
 
-export async function getAllDebts() {
-  const res = await api.get("/api/v1/debts");
+// GET /api/v1/debts?itemId=123
+export async function getAllDebts({ itemId } = {}) {
+  const params = {};
+  if (itemId != null && itemId !== "") params.itemId = itemId;
+
+  const res = await api.get("/api/v1/debts", { params });
   return res.data;
 }
+
