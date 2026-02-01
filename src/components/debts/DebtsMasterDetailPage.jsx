@@ -148,6 +148,13 @@ function intOr(v, fallback = 0) {
 function parseStateFromUrl(sp) {
   const pi = intOr(sp.get("pi"), 0);
 
+  // exact person filter (from Dashboard drill)
+  const pidRaw = sp.get("pid");
+  const pid =
+    pidRaw != null && pidRaw !== "" && Number.isFinite(Number(pidRaw))
+      ? Number(pidRaw)
+      : null;
+
   const sortBy = sp.get("sb") || null;
   const sortDir = sp.get("sd") === "desc" ? "desc" : "asc";
 
@@ -166,10 +173,11 @@ function parseStateFromUrl(sp) {
   const hf = { ...EMPTY_HF };
   for (const k of HF_KEYS) hf[k] = sp.get(`hf_${k}`) ?? "";
 
-  return { pi, sortBy, sortDir, sid, itemId, hf };
+  return { pi, sortBy, sortDir, sid, itemId, pid, hf };
 }
 
-function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, hf }) {
+
+function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, pid, hf }) {
   const obj = {};
   obj.pi = String(pi ?? 0);
 
@@ -177,8 +185,10 @@ function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, hf }) {
   if (sortBy) obj.sd = sortDir === "desc" ? "desc" : "asc";
 
   if (sid != null && sid !== "") obj.sid = String(sid);
-
   if (itemId != null && itemId !== "") obj.iid = String(itemId);
+
+  // ✅ keep pid in URL
+  if (pid != null && pid !== "") obj.pid = String(pid);
 
   for (const k of HF_KEYS) {
     const v = hf?.[k];
@@ -187,6 +197,7 @@ function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, hf }) {
 
   return obj;
 }
+
 
 function shallowEqualObj(a, b) {
   const ak = Object.keys(a || {});
@@ -254,6 +265,9 @@ export default function DebtsMasterDetailPage() {
   const [itemId, setItemId] = useState(initial.itemId ?? null);
   const [itemFilter, setItemFilter] = useState(null);
 
+  // exact person filter (URL param: pid)
+const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
+
   // detail
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [detailView, setDetailView] = useState(null);
@@ -314,6 +328,8 @@ export default function DebtsMasterDetailPage() {
     setSortDir(parsed.sortDir || "asc");
     setHf(parsed.hf);
     setItemId(parsed.itemId ?? null);
+    setPersonIdFilter(parsed.pid ?? null);
+
 
     if (parsed.sid != null) setSelectedDebtId(parsed.sid);
   }, [location.search]);
@@ -336,8 +352,10 @@ export default function DebtsMasterDetailPage() {
         sortDir,
         sid: selectedDebtId,
         itemId,
+        pid: personIdFilter,
         hf,
       });
+
 
       const currentSp = new URLSearchParams(location.search);
       const current = {};
@@ -363,6 +381,8 @@ export default function DebtsMasterDetailPage() {
     sortBy,
     sortDir,
     selectedDebtId,
+    itemId,
+    personIdFilter,
     hf,
     location.search,
     setSearchParams,
@@ -514,6 +534,11 @@ export default function DebtsMasterDetailPage() {
       const projectId = getAny(r, ["project_id", "projectId", "projectID"]);
       const personId = getAny(r, ["person_id", "personId", "personID"]);
 
+      // exact filter by person id (Dashboard drill: /debts?pid=123)
+      if (personIdFilter != null && Number(personId) !== Number(personIdFilter)) {
+        return false;
+      }
+
       const projectTitle = normalizeFaText(
         projectId ? projectsMap.get(projectId) || `#${projectId}` : "",
       );
@@ -538,7 +563,8 @@ export default function DebtsMasterDetailPage() {
 
       return true;
     });
-  }, [headers, hf, projectsMap, personsMap]);
+  }, [headers, hf, projectsMap, personsMap, personIdFilter]);
+
 
   // when filters change: reset page and mark auto-pick
   const lastFilterSigRef = useRef("");

@@ -89,12 +89,24 @@ function buildCategoryTree(flatRows) {
   });
 
   const sortRec = (arr) => {
-    arr.sort((a, b) => String(a.title || "").localeCompare(String(b.title || ""), "fa"));
+    arr.sort((a, b) =>
+      String(a.title || "").localeCompare(String(b.title || ""), "fa"),
+    );
     arr.forEach((x) => sortRec(x.children || []));
   };
   sortRec(roots);
 
   return roots;
+}
+
+// open Debts page in a new tab, filtered by clicked item
+function openDebtsByItemInNewTab(it) {
+  const id = it?.itemId ?? it?.item_id ?? it?.id;
+  if (!id) return;
+
+  // Debts page reads item filter from query param: iid
+  const url = `/debts?iid=${encodeURIComponent(id)}`;
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 /* ======================
@@ -103,7 +115,11 @@ function buildCategoryTree(flatRows) {
 function isoToPersianDateObject(iso) {
   if (!iso) return null;
   // parse ISO as Gregorian, then convert to Persian for display
-  const d = new DateObject({ date: iso, calendar: gregorian, locale: persian_fa });
+  const d = new DateObject({
+    date: iso,
+    calendar: gregorian,
+    locale: persian_fa,
+  });
   return d.convert(persian);
 }
 
@@ -134,7 +150,9 @@ function Card({ title, children }) {
 function MiniTable({ title, subtitle, children }) {
   return (
     <Card title={title}>
-      {subtitle ? <div className="text-xs text-zinc-500 mb-3">{subtitle}</div> : null}
+      {subtitle ? (
+        <div className="text-xs text-zinc-500 mb-3">{subtitle}</div>
+      ) : null}
       {children}
     </Card>
   );
@@ -174,7 +192,13 @@ function PieCard({ title, rows }) {
         <div className="h-[260px]">
           <ResponsiveContainer width="100%" height="100%">
             <PieChart>
-              <Pie data={data} dataKey="value" nameKey="name" outerRadius={90} label={false}>
+              <Pie
+                data={data}
+                dataKey="value"
+                nameKey="name"
+                outerRadius={90}
+                label={false}
+              >
                 {data.map((_, i) => (
                   <Cell key={i} fill={COLORS[i % COLORS.length]} />
                 ))}
@@ -270,6 +294,19 @@ export default function DashboardPage() {
   // executive totals (only used for 2 cards)
   const [execKpis, setExecKpis] = useState(null);
 
+  // --- helpers (paste near top of DashboardPage.jsx) ---
+  const openInNewTab = (url) => {
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
+  const moneyCellLinkStyle = {
+    cursor: "pointer",
+    color: "var(--primary, #1677ff)",
+    textDecoration: "underline",
+    fontWeight: 600,
+    whiteSpace: "nowrap",
+  };
+
   async function loadAll() {
     setLoading(true);
     setSelectedItemCategory(null);
@@ -281,14 +318,17 @@ export default function DashboardPage() {
       lastRefresh: () => getLastRefresh(),
 
       personsSummary: () => getPersonsSummary({ from, to, limit: 50 }),
-      itemCategoriesTree: () => getItemCategoriesTree({ from, to, onlyActive: true }),
+      itemCategoriesTree: () =>
+        getItemCategoriesTree({ from, to, onlyActive: true }),
 
       // simplified aging: still fetched, but UI shows only person + open_total
-      debtAgingPersons: () => getDebtAgingByPerson({ from, to, asOf: to, limit: 50 }),
+      debtAgingPersons: () =>
+        getDebtAgingByPerson({ from, to, asOf: to, limit: 50 }),
 
       openDebtsCoverage: () => apiGetOpenDebtsCoverage({ from, to, limit: 50 }),
 
-      unallocatedOverview: () => apiGetUnallocatedOverview({ from, to, limit: 50 }),
+      unallocatedOverview: () =>
+        apiGetUnallocatedOverview({ from, to, limit: 50 }),
 
       recentActivities: () => apiGetRecentActivities({ limit: 20 }),
 
@@ -328,7 +368,8 @@ export default function DashboardPage() {
           if (prev && prev.size > 0) return prev;
           const next = new Set();
           (ict || []).forEach((r) => {
-            const parentId = r.parentItemCategoryId ?? r.parent_item_category_id;
+            const parentId =
+              r.parentItemCategoryId ?? r.parent_item_category_id;
             if (!parentId) {
               const id = r.itemCategoryId ?? r.item_category_id;
               next.add(id);
@@ -347,7 +388,9 @@ export default function DashboardPage() {
       const uo = get("unallocatedOverview");
       if (uo !== undefined) {
         setUnallocatedOpenDebts(uo?.openDebts || uo?.open_debts || []);
-        setUnallocatedExpenseTxs(uo?.unallocatedExpenses || uo?.unallocated_expenses || []);
+        setUnallocatedExpenseTxs(
+          uo?.unallocatedExpenses || uo?.unallocated_expenses || [],
+        );
       }
 
       const ra = get("recentActivities");
@@ -500,21 +543,31 @@ export default function DashboardPage() {
           <div className="text-2xl font-bold">
             {formatNumber(kpis?.totalDebtAmount ?? kpis?.total_debt_amount)}
           </div>
-          <div className="text-xs text-zinc-500 mt-1">بازه تاریخ انتخاب‌شده</div>
+          <div className="text-xs text-zinc-500 mt-1">
+            بازه تاریخ انتخاب‌شده
+          </div>
         </Card>
 
         <Card title="جمع پرداخت‌ها (PAYMENTS)">
           <div className="text-2xl font-bold">
-            {formatNumber(kpis?.totalPaymentAmount ?? kpis?.total_payment_amount)}
+            {formatNumber(
+              kpis?.totalPaymentAmount ?? kpis?.total_payment_amount,
+            )}
           </div>
-          <div className="text-xs text-zinc-500 mt-1">بازه تاریخ انتخاب‌شده</div>
+          <div className="text-xs text-zinc-500 mt-1">
+            بازه تاریخ انتخاب‌شده
+          </div>
         </Card>
 
         <Card title="جمع دریافتی‌ها (RECEIPTS)">
           <div className="text-2xl font-bold">
-            {formatNumber(kpis?.totalReceiptAmount ?? kpis?.total_receipt_amount)}
+            {formatNumber(
+              kpis?.totalReceiptAmount ?? kpis?.total_receipt_amount,
+            )}
           </div>
-          <div className="text-xs text-zinc-500 mt-1">بازه تاریخ انتخاب‌شده</div>
+          <div className="text-xs text-zinc-500 mt-1">
+            بازه تاریخ انتخاب‌شده
+          </div>
         </Card>
       </div>
 
@@ -523,7 +576,9 @@ export default function DashboardPage() {
         <div className="bg-white border rounded-2xl shadow-sm p-4">
           <div className="text-xs text-zinc-500">جمع هزینه‌ها (EXP)</div>
           <div className="text-lg font-bold mt-1">
-            {formatNumber(execKpis?.totalExpenseAmount ?? execKpis?.total_expense_amount)}
+            {formatNumber(
+              execKpis?.totalExpenseAmount ?? execKpis?.total_expense_amount,
+            )}
           </div>
           <div className="text-[11px] text-zinc-500 mt-1">
             شامل پرداخت‌هایی که از نوع هزینه ثبت شده‌اند.
@@ -533,7 +588,9 @@ export default function DashboardPage() {
         <div className="bg-white border rounded-2xl shadow-sm p-4">
           <div className="text-xs text-zinc-500">جمع تنخواه (TRN)</div>
           <div className="text-lg font-bold mt-1">
-            {formatNumber(execKpis?.totalTankhahAmount ?? execKpis?.total_tankhah_amount)}
+            {formatNumber(
+              execKpis?.totalTankhahAmount ?? execKpis?.total_tankhah_amount,
+            )}
           </div>
           <div className="text-[11px] text-zinc-500 mt-1">
             تنخواه الزاماً نیاز به تخصیص ندارد.
@@ -569,19 +626,23 @@ export default function DashboardPage() {
                     const hasChildren = (node.children?.length || 0) > 0;
                     const isOpen = expandedCats.has(id);
 
-                    const amount = node.amount ?? node.totalDebt ?? node.total_debt;
+                    const amount =
+                      node.amount ?? node.totalDebt ?? node.total_debt;
                     const allocatedAmount =
                       node.allocatedAmount ??
                       node.allocated_amount ??
                       node.totalAllocated ??
                       node.total_allocated;
-                    const remaining = node.remaining ?? node.remain ?? node.remained;
+                    const remaining =
+                      node.remaining ?? node.remain ?? node.remained;
 
                     return (
                       <div>
                         <div
                           className={`flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-zinc-50 cursor-pointer ${
-                            selectedItemCategory?.itemCategoryId === id ? "bg-zinc-100" : ""
+                            selectedItemCategory?.itemCategoryId === id
+                              ? "bg-zinc-100"
+                              : ""
                           }`}
                           style={{ paddingRight: 8 + depth * 18 }}
                           onClick={() =>
@@ -606,7 +667,13 @@ export default function DashboardPage() {
                             className={`w-6 h-6 flex items-center justify-center rounded-md border bg-white hover:bg-zinc-50 ${
                               hasChildren ? "" : "opacity-40 cursor-default"
                             }`}
-                            title={hasChildren ? (isOpen ? "بستن" : "باز کردن") : "بدون زیرمجموعه"}
+                            title={
+                              hasChildren
+                                ? isOpen
+                                  ? "بستن"
+                                  : "باز کردن"
+                                : "بدون زیرمجموعه"
+                            }
                           >
                             {hasChildren ? (isOpen ? "▾" : "▸") : "•"}
                           </button>
@@ -614,7 +681,8 @@ export default function DashboardPage() {
                           <div className="min-w-0 flex-1">
                             <div className="text-sm truncate">{node.title}</div>
                             <div className="text-[11px] text-zinc-500 font-mono mt-0.5">
-                              بدهی: {formatNumber(amount)} | تخصیص: {formatNumber(allocatedAmount)} | مانده:{" "}
+                              بدهی: {formatNumber(amount)} | تخصیص:{" "}
+                              {formatNumber(allocatedAmount)} | مانده:{" "}
                               {formatNumber(remaining)}
                             </div>
                           </div>
@@ -631,7 +699,9 @@ export default function DashboardPage() {
                     );
                   };
 
-                  return roots.map((r) => <Row key={r.id} node={r} depth={0} />);
+                  return roots.map((r) => (
+                    <Row key={r.id} node={r} depth={0} />
+                  ));
                 })()}
               </div>
             </div>
@@ -664,7 +734,9 @@ export default function DashboardPage() {
               {itemsByCategoryLoading ? (
                 <div className="text-xs text-zinc-500">در حال دریافت...</div>
               ) : !selectedItemCategory ? (
-                <div className="text-xs text-zinc-500">یک دسته را انتخاب کنید.</div>
+                <div className="text-xs text-zinc-500">
+                  یک دسته را انتخاب کنید.
+                </div>
               ) : itemsByCategory.length === 0 ? (
                 <div className="text-xs text-zinc-500">آیتمی یافت نشد</div>
               ) : (
@@ -680,11 +752,29 @@ export default function DashboardPage() {
                     </thead>
                     <tbody>
                       {itemsByCategory.map((it, idx) => (
-                        <tr key={`${it.itemId ?? it.item_id ?? idx}`} className="border-b">
+                        <tr
+                          key={`${it.itemId ?? it.item_id ?? idx}`}
+                          className="border-b"
+                        >
                           <td className="py-2 text-right">{it.title}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(it.amount)}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(it.allocatedAmount)}</td>
-                          <td className="py-2 text-left font-mono">{formatNumber(it.remaining)}</td>
+                          <td className="py-2 text-left">
+                            <button
+                              type="button"
+                              className="font-mono text-blue-600 hover:underline disabled:opacity-50 disabled:no-underline"
+                              onClick={() => openDebtsByItemInNewTab(it)}
+                              disabled={!Number(it?.amount)}
+                              title="نمایش بدهی‌های این آیتم"
+                            >
+                              {formatNumber(it.amount)}
+                            </button>
+                          </td>
+
+                          <td className="py-2 text-left font-mono">
+                            {formatNumber(it.allocatedAmount)}
+                          </td>
+                          <td className="py-2 text-left font-mono">
+                            {formatNumber(it.remaining)}
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -697,7 +787,10 @@ export default function DashboardPage() {
       </MiniTable>
 
       {/* Persons drill */}
-      <MiniTable title="اشخاص" subtitle="کلیک روی شخص برای دیدن بدهی‌های قابل پرداخت">
+      <MiniTable
+        title="اشخاص"
+        subtitle="کلیک روی شخص برای دیدن بدهی‌های قابل پرداخت"
+      >
         {personsSummary.length === 0 ? (
           <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
         ) : (
@@ -721,10 +814,46 @@ export default function DashboardPage() {
                     title="کلیک برای Drill"
                   >
                     <td className="py-2 text-right">{p.displayName}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.totalDebt)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.totalPaid)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.totalReceived)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(p.remain)}</td>
+                    <td
+                      className="py-2 text-left font-mono text-blue-600 underline cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation(); // ⛔ نذار row click اجرا بشه
+                        openInNewTab(`/debts?pid=${p.personId}`);
+                      }}
+                      title="نمایش بدهی‌های این شخص"
+                    >
+                      {formatNumber(p.totalDebt)}
+                    </td>
+
+                    <td
+                      className="py-2 text-left font-mono text-blue-600 underline cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation(); // ⛔ نذار click ردیف اجرا بشه
+                        window.open(
+                          `/transactions?fromPid=${encodeURIComponent(p.personId)}`,
+                          "_blank",
+                          "noopener,noreferrer",
+                        );
+                      }}
+                      title="نمایش تراکنش‌های پرداختی این شخص"
+                    >
+                      {formatNumber(p.totalPaid)}
+                    </td>
+
+                    <td
+                      className="py-2 text-left font-mono text-blue-600 underline cursor-pointer"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openInNewTab(`/transactions?toPid=${p.personId}`);
+                      }}
+                      title="نمایش تراکنش‌های دریافتی"
+                    >
+                      {formatNumber(p.totalReceived)}
+                    </td>
+
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(p.remain)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -752,8 +881,12 @@ export default function DashboardPage() {
               <tbody>
                 {debtAgingPersons.map((r) => (
                   <tr key={r.person_id ?? r.personId} className="border-b">
-                    <td className="py-2 text-right">{r.display_name ?? r.displayName}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.open_total ?? r.openTotal)}</td>
+                    <td className="py-2 text-right">
+                      {r.display_name ?? r.displayName}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.open_total ?? r.openTotal)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -785,14 +918,29 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {openDebtsCoverage.map((r, idx) => (
-                  <tr key={`${r.debt_id ?? r.debtId ?? idx}`} className="border-b">
+                  <tr
+                    key={`${r.debt_id ?? r.debtId ?? idx}`}
+                    className="border-b"
+                  >
                     <td className="py-2 text-right">{r.debt_id ?? r.debtId}</td>
-                    <td className="py-2 text-right">{r.debt_date ?? r.debtDate}</td>
-                    <td className="py-2 text-right">{r.person_name ?? r.personName}</td>
-                    <td className="py-2 text-right">{r.project_title ?? r.projectTitle}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.total_debt ?? r.totalDebt)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.total_alloc ?? r.totalAlloc)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
+                    <td className="py-2 text-right">
+                      {r.debt_date ?? r.debtDate}
+                    </td>
+                    <td className="py-2 text-right">
+                      {r.person_name ?? r.personName}
+                    </td>
+                    <td className="py-2 text-right">
+                      {r.project_title ?? r.projectTitle}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.total_debt ?? r.totalDebt)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.total_alloc ?? r.totalAlloc)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.remaining)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -821,13 +969,28 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {unallocatedOpenDebts.map((r, idx) => (
-                    <tr key={`${r.debt_id ?? r.debtId ?? idx}`} className="border-b">
-                      <td className="py-2 text-right">{r.debt_id ?? r.debtId}</td>
-                      <td className="py-2 text-right">{r.debt_date ?? r.debtDate}</td>
-                      <td className="py-2 text-right">{r.person_name ?? r.personName}</td>
-                      <td className="py-2 text-right">{r.project_title ?? r.projectTitle}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(r.total_debt ?? r.totalDebt)}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
+                    <tr
+                      key={`${r.debt_id ?? r.debtId ?? idx}`}
+                      className="border-b"
+                    >
+                      <td className="py-2 text-right">
+                        {r.debt_id ?? r.debtId}
+                      </td>
+                      <td className="py-2 text-right">
+                        {r.debt_date ?? r.debtDate}
+                      </td>
+                      <td className="py-2 text-right">
+                        {r.person_name ?? r.personName}
+                      </td>
+                      <td className="py-2 text-right">
+                        {r.project_title ?? r.projectTitle}
+                      </td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(r.total_debt ?? r.totalDebt)}
+                      </td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(r.remaining)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -855,14 +1018,31 @@ export default function DashboardPage() {
                 </thead>
                 <tbody>
                   {unallocatedExpenseTxs.map((r, idx) => (
-                    <tr key={`${r.transaction_id ?? r.transactionId ?? idx}`} className="border-b">
-                      <td className="py-2 text-right">{r.transaction_id ?? r.transactionId}</td>
-                      <td className="py-2 text-right">{r.transaction_date ?? r.transactionDate}</td>
-                      <td className="py-2 text-right">{r.person_name ?? r.personName}</td>
-                      <td className="py-2 text-right">{r.project_title ?? r.projectTitle}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(r.amount)}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(r.allocated)}</td>
-                      <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
+                    <tr
+                      key={`${r.transaction_id ?? r.transactionId ?? idx}`}
+                      className="border-b"
+                    >
+                      <td className="py-2 text-right">
+                        {r.transaction_id ?? r.transactionId}
+                      </td>
+                      <td className="py-2 text-right">
+                        {r.transaction_date ?? r.transactionDate}
+                      </td>
+                      <td className="py-2 text-right">
+                        {r.person_name ?? r.personName}
+                      </td>
+                      <td className="py-2 text-right">
+                        {r.project_title ?? r.projectTitle}
+                      </td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(r.amount)}
+                      </td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(r.allocated)}
+                      </td>
+                      <td className="py-2 text-left font-mono">
+                        {formatNumber(r.remaining)}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -890,10 +1070,14 @@ export default function DashboardPage() {
               <tbody>
                 {recentActivities.map((r, idx) => (
                   <tr key={`${r.id ?? idx}`} className="border-b">
-                    <td className="py-2 text-right">{r.created_at ?? r.createdAt}</td>
+                    <td className="py-2 text-right">
+                      {r.created_at ?? r.createdAt}
+                    </td>
                     <td className="py-2 text-right">{r.type}</td>
                     <td className="py-2 text-right">{r.description}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.amount)}</td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.amount)}
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -934,13 +1118,26 @@ export default function DashboardPage() {
               </thead>
               <tbody>
                 {personPayables.map((r, idx) => (
-                  <tr key={`${r.debtId ?? r.debt_id ?? idx}`} className="border-b">
+                  <tr
+                    key={`${r.debtId ?? r.debt_id ?? idx}`}
+                    className="border-b"
+                  >
                     <td className="py-2 text-right">{r.debtId ?? r.debt_id}</td>
-                    <td className="py-2 text-right">{r.debtDate ?? r.debt_date}</td>
-                    <td className="py-2 text-right">{r.projectTitle ?? r.project_title}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.totalDebt ?? r.total_debt)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.totalAllocated ?? r.total_allocated)}</td>
-                    <td className="py-2 text-left font-mono">{formatNumber(r.remaining)}</td>
+                    <td className="py-2 text-right">
+                      {r.debtDate ?? r.debt_date}
+                    </td>
+                    <td className="py-2 text-right">
+                      {r.projectTitle ?? r.project_title}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.totalDebt ?? r.total_debt)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.totalAllocated ?? r.total_allocated)}
+                    </td>
+                    <td className="py-2 text-left font-mono">
+                      {formatNumber(r.remaining)}
+                    </td>
                   </tr>
                 ))}
               </tbody>

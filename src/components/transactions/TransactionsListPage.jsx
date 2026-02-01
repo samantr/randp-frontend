@@ -110,8 +110,18 @@ function parseIntSafe(v, fallback = 0) {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
+function parseNullableInt(v) {
+  if (v == null) return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 function parseStateFromSearchParams(sp) {
   const page = parseIntSafe(sp.get("page"), 0);
+
+  // ✅ exact id filters (from Dashboard drill)
+  const toPid = parseNullableInt(sp.get("toPid"));
+  const fromPid = parseNullableInt(sp.get("fromPid"));
 
   const sortKey = sp.get("sortKey");
   const sortDir = sp.get("sortDir");
@@ -127,10 +137,12 @@ function parseStateFromSearchParams(sp) {
     cf[k] = v ?? "";
   }
 
-  return { page, sort, cf };
+  return { page, sort, cf, toPid, fromPid };
 }
 
-function buildSearchParamsObject({ page, sort, cf }) {
+
+
+function buildSearchParamsObject({ page, sort, cf, toPid, fromPid }) {
   const params = {};
   params.page = String(page ?? 0);
 
@@ -138,6 +150,10 @@ function buildSearchParamsObject({ page, sort, cf }) {
     params.sortKey = sort.key;
     params.sortDir = sort.dir;
   }
+
+  // ✅ keep id filters in URL
+  if (toPid != null) params.toPid = String(toPid);
+  if (fromPid != null) params.fromPid = String(fromPid);
 
   for (const k of CF_KEYS) {
     const v = cf?.[k];
@@ -148,6 +164,7 @@ function buildSearchParamsObject({ page, sort, cf }) {
 
   return params;
 }
+
 
 function stableSerializeParamsObject(obj) {
   const keys = Object.keys(obj).sort();
@@ -214,6 +231,10 @@ export default function TransactionsListPage() {
   const [cf, setCf] = useState(initial.cf);
   const [sort, setSort] = useState(initial.sort);
 
+  // ✅ exact person id filters (URL: ?toPid=123 / ?fromPid=123)
+  const [toPid, setToPid] = useState(initial.toPid ?? null);
+  const [fromPid, setFromPid] = useState(initial.fromPid ?? null);
+
   const [personsMap, setPersonsMap] = useState({});
   const [projectsMap, setProjectsMap] = useState({});
 
@@ -228,17 +249,21 @@ export default function TransactionsListPage() {
     setPage(parsed.page);
     setSort(parsed.sort);
     setCf(parsed.cf);
+
+    setToPid(parsed.toPid ?? null);
+    setFromPid(parsed.fromPid ?? null);
+
   }, [searchParams]);
 
   useEffect(() => {
-    const obj = buildSearchParamsObject({ page, sort, cf });
+    const obj = buildSearchParamsObject({  page, sort, cf, toPid, fromPid });
     const sig = stableSerializeParamsObject(obj);
 
     if (sig === lastPushedStateRef.current) return;
     lastPushedStateRef.current = sig;
 
     setSearchParams(obj, { replace: true });
-  }, [page, sort, cf, setSearchParams]);
+  }, [ page, sort, cf, toPid, fromPid, setSearchParams]);
 
   const loadLookups = useCallback(async () => {
     try {
@@ -326,16 +351,27 @@ export default function TransactionsListPage() {
     const rows = data.content || [];
 
     const filtered = rows.filter((r) => {
-      for (const k of Object.keys(cf)) {
-        const needle = normalizeText(cf[k]);
-        if (!needle) continue;
+  // ✅ exact ID filters first
+  if (toPid != null) {
+    const rid = r.toPersonId || r.toPerson?.id;
+    if (Number(rid) !== Number(toPid)) return false;
+  }
+  if (fromPid != null) {
+    const rid = r.fromPersonId || r.fromPerson?.id;
+    if (Number(rid) !== Number(fromPid)) return false;
+  }
 
-        const val = rowValue(r, k);
-        const hay = normalizeText(val);
-        if (!hay.includes(needle)) return false;
-      }
-      return true;
-    });
+  for (const k of Object.keys(cf)) {
+    const needle = normalizeText(cf[k]);
+    if (!needle) continue;
+
+    const val = rowValue(r, k);
+    const hay = normalizeText(val);
+    if (!hay.includes(needle)) return false;
+  }
+  return true;
+});
+
 
     if (!sort.key || !sort.dir) return filtered;
 
@@ -357,7 +393,7 @@ export default function TransactionsListPage() {
       if (va > vb) return 1 * dirMul;
       return 0;
     });
-  }, [data.content, cf, sort, rowValue]);
+  }, [data.content, cf, sort, rowValue, toPid, fromPid]);
 
   function toggleSort(key) {
     setSort((prev) => {
