@@ -538,44 +538,34 @@ export default function DashboardPage() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <Card title="جمع بدهی‌ها (DEBTS)">
           <div className="text-2xl font-bold">
             {formatNumber(kpis?.totalDebtAmount ?? kpis?.total_debt_amount)}
           </div>
           <div className="text-xs text-zinc-500 mt-1">
-            بازه تاریخ انتخاب‌شده
+            بازه تاریخ انتخاب‌ شده
           </div>
         </Card>
 
         <Card title="جمع پرداخت‌ها (PAYMENTS)">
           <div className="text-2xl font-bold">
             {formatNumber(
-              kpis?.totalPaymentAmount ?? kpis?.total_payment_amount,
+              kpis?.totalTransactionsAmount ?? kpis?.total_transactions_amount,
             )}
           </div>
           <div className="text-xs text-zinc-500 mt-1">
             بازه تاریخ انتخاب‌شده
           </div>
         </Card>
-
-        <Card title="جمع دریافتی‌ها (RECEIPTS)">
-          <div className="text-2xl font-bold">
-            {formatNumber(
-              kpis?.totalReceiptAmount ?? kpis?.total_receipt_amount,
-            )}
-          </div>
-          <div className="text-xs text-zinc-500 mt-1">
-            بازه تاریخ انتخاب‌شده
-          </div>
-        </Card>
+      
       </div>
 
       {/* Executive totals (2 cards) */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
         <div className="bg-white border rounded-2xl shadow-sm p-4">
           <div className="text-xs text-zinc-500">جمع هزینه‌ها (EXP)</div>
-          <div className="text-lg font-bold mt-1">
+          <div className="text-2xl font-bold mt-1">
             {formatNumber(
               execKpis?.totalExpenseAmount ?? execKpis?.total_expense_amount,
             )}
@@ -587,7 +577,7 @@ export default function DashboardPage() {
 
         <div className="bg-white border rounded-2xl shadow-sm p-4">
           <div className="text-xs text-zinc-500">جمع تنخواه (TRN)</div>
-          <div className="text-lg font-bold mt-1">
+          <div className="text-2xl font-bold mt-1">
             {formatNumber(
               execKpis?.totalTankhahAmount ?? execKpis?.total_tankhah_amount,
             )}
