@@ -1053,7 +1053,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Recent activities */}
-      <MiniTable title="فعالیت‌های اخیر" subtitle="آخرین ۲۰ رویداد">
+      {/*<MiniTable title="فعالیت‌های اخیر" subtitle="آخرین ۲۰ رویداد">
         {recentActivities.length === 0 ? (
           <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
         ) : (
@@ -1084,7 +1084,7 @@ export default function DashboardPage() {
             </table>
           </div>
         )}
-      </MiniTable>
+      </MiniTable>*/}
 
       {/* Person Payables Modal */}
       <Modal
