@@ -92,3 +92,33 @@ export async function getItemCategoriesTree({ from, to, onlyActive = true }) {
 }
 
 
+export async function downloadPersonOperationsExcel({
+  personId,
+  displayName,
+  from,
+  to,
+}) {
+  const res = await api.get(`/api/v1/reports/persons/${personId}/operations.xlsx`, {
+    params: { from, to },
+    responseType: "blob",
+  });
+
+  const blob = new Blob([res.data], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+
+  const safeName = String(displayName || "person")
+    .replace(/[\\/:*?"<>|]/g, "-")
+    .trim();
+
+  a.href = url;
+  a.download = `گزارش عملیات ${safeName}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}

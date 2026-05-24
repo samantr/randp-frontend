@@ -300,7 +300,7 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
   const [hf, setHf] = useState(initial.hf || { ...EMPTY_HF });
   const [sortBy, setSortBy] = useState(initial.sortBy);
   const [sortDir, setSortDir] = useState(initial.sortDir || "asc");
-  const PAGE_SIZE = 5;
+  const PAGE_SIZE = 50;
   const [pageIndex, setPageIndex] = useState(initial.pi || 0);
 
   // ✅ key: ONLY auto-pick first row when we explicitly want

@@ -14,6 +14,7 @@ import {
   getItemsByCategory,
   getItemCategoriesTree,
   getDebtAgingByPerson,
+  downloadPersonOperationsExcel,
 } from "../../api/dashboardApi";
 
 import api from "../../api/axios";
@@ -249,7 +250,7 @@ async function apiGetExecutiveKpis({ from, to, asOf }) {
    ====================== */
 export default function DashboardPage() {
   // default range: last 30 days
-  const [from, setFrom] = useState(addDaysISO(todayISO(), -365));
+  const [from, setFrom] = useState(addDaysISO(todayISO(), -1000));
   const [to, setTo] = useState(todayISO());
 
   const fromPersian = useMemo(() => isoToPersianDateObject(from), [from]);
@@ -444,6 +445,24 @@ export default function DashboardPage() {
       setPayablesLoading(false);
     }
   }
+
+  async function onDownloadPersonExcel(e, p) {
+  e.stopPropagation();
+
+  try {
+    await downloadPersonOperationsExcel({
+      personId: p.personId,
+      displayName: p.displayName,
+      from,
+      to,
+    });
+
+    toast.success("فایل اکسل ساخته شد");
+  } catch (err) {
+    console.error(err);
+    toast.error(getApiErrorMessage(err) || "خطا در ساخت فایل اکسل");
+  }
+}
 
   async function openItemCategoryDrill(c) {
     const id = c.itemCategoryId ?? c.item_category_id;
@@ -793,6 +812,7 @@ export default function DashboardPage() {
                   <th className="text-left py-2">جمع پرداختی</th>
                   <th className="text-left py-2">جمع دریافتی</th>
                   <th className="text-left py-2">مانده</th>
+                  <th className="text-center py-2">خروجی</th>
                 </tr>
               </thead>
               <tbody>
@@ -844,6 +864,18 @@ export default function DashboardPage() {
                     <td className="py-2 text-left font-mono">
                       {formatNumber(p.remain)}
                     </td>
+
+                    <td className="py-2 text-center">
+                      <button
+                        type="button"
+                        className="px-3 py-1 text-xs rounded-lg border border-emerald-600 text-emerald-700 hover:bg-emerald-50"
+                        onClick={(e) => onDownloadPersonExcel(e, p)}
+                        title="دانلود گزارش عملیات شخص"
+                      >
+                        Excel
+                      </button>
+                    </td>
+
                   </tr>
                 ))}
               </tbody>
@@ -926,7 +958,7 @@ export default function DashboardPage() {
                       {formatNumber(r.total_debt ?? r.totalDebt)}
                     </td>
                     <td className="py-2 text-left font-mono">
-                      {formatNumber(r.total_alloc ?? r.totalAlloc)}
+                      {formatNumber(r.allocated_amount ?? r.allocatedAmount)}
                     </td>
                     <td className="py-2 text-left font-mono">
                       {formatNumber(r.remaining)}
