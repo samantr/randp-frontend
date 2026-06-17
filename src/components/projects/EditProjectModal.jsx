@@ -7,6 +7,11 @@ import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { getProjects, updateProject } from "../../api/projectsApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  lookupDisplayName,
+  lookupMatches,
+  sortLookupOptions,
+} from "../../utils/lookupOptions";
 
 export default function EditProjectModal({
   open,
@@ -41,15 +46,9 @@ export default function EditProjectModal({
       const nq = normalizeFaText(q || "");
       const filtered = !nq
         ? candidates
-        : candidates.filter((p) => {
-            const t = normalizeFaText(p?.title || "");
-            const c = normalizeFaText(p?.code || "");
-            return t.includes(nq) || c.includes(nq);
-          });
+        : candidates.filter((p) => lookupMatches(p, nq));
 
-      return filtered.sort((a, b) =>
-        (a?.title || "").localeCompare(b?.title || "")
-      );
+      return filtered.sort(sortLookupOptions);
     } catch {
       return [];
     }
@@ -117,12 +116,7 @@ export default function EditProjectModal({
             value={parent?.id ? parent : null}
             onChange={setParent}
             fetchOptions={fetchParents}
-            display={(p) => {
-              const id = p?.id ?? "";
-              const t = p?.title ?? "";
-              const c = p?.code ?? "";
-              return c ? `${c} - ${t}` : `${id} - ${t}`;
-            }}
+            display={(p) => lookupDisplayName(p)}
             placeholder="بدون پدر (ریشه)"
           />
 

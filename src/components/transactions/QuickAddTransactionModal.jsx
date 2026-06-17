@@ -7,10 +7,15 @@ import toast from "react-hot-toast";
 import LookupSelect from "../lookup/LookupSelect";
 import { createTransaction } from "../../api/transactionsApi";
 import { searchPersons } from "../../api/personsApi";
-import { getProjects } from "../../api/projectsApi";
+import { getProjectLookups } from "../../api/projectsApi";
 
 import QuickAddPersonModal from "../persons/QuickAddPersonModal";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  lookupDisplayName,
+  lookupMatches,
+  sortLookupOptions,
+} from "../../utils/lookupOptions";
 
 /* ======================
    Jalali Date Picker (same as Dashboard)
@@ -98,8 +103,7 @@ function personDisplayName(p) {
 }
 
 function projectDisplayName(p) {
-  if (!p) return "-";
-  return p.title || `#${p.id}`;
+  return lookupDisplayName(p);
 }
 
 const PAYMENT_TYPES = [
@@ -137,7 +141,7 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
     if (!open) return;
     (async () => {
       try {
-        const list = await getProjects();
+        const list = await getProjectLookups();
         setProjectsCache(normalizePageLike(list).content || list || []);
       } catch {}
     })();
@@ -153,7 +157,8 @@ export default function QuickAddTransactionModal({ open, onClose, onCreated }) {
       const needle = (q || "").trim();
       if (!needle) return projectsCache.slice(0, 30);
       return projectsCache
-        .filter((p) => (p?.title || "").includes(needle))
+        .filter((p) => lookupMatches(p, needle))
+        .sort(sortLookupOptions)
         .slice(0, 30);
     },
     [projectsCache]

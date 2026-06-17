@@ -10,12 +10,17 @@ import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 
 import { deleteItem, getItemById, getItems, searchItems } from "../../api/itemsApi";
-import { getItemCategories } from "../../api/itemCategoriesApi";
+import { getItemCategoryLookups } from "../../api/itemCategoriesApi";
 
 import QuickAddItemModal from "./QuickAddItemModal";
 import EditItemModal from "./EditItemModal";
 import QuickAddItemCategoryModal from "../itemCategories/QuickAddItemCategoryModal";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  lookupDisplayName,
+  lookupMatches,
+  sortLookupOptions,
+} from "../../utils/lookupOptions";
 
 function paginate(arr, page, size) {
   const total = arr.length;
@@ -87,12 +92,12 @@ export default function ItemsListPage() {
   }, [load]);
 
   async function fetchCategories({ q }) {
-    const allCats = await getItemCategories();
+    const allCats = await getItemCategoryLookups();
     const nq = normalizeFaText(q || "");
     const filtered = !nq
       ? allCats
-      : (allCats || []).filter((c) => normalizeFaText(c.title).includes(nq));
-    return filtered.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+      : (allCats || []).filter((c) => lookupMatches(c, nq));
+    return filtered.sort(sortLookupOptions);
   }
 
   const pageData = useMemo(() => paginate(all, page, size), [all, page, size]);
@@ -192,7 +197,7 @@ export default function ItemsListPage() {
             setCategoryFilter(c);
           }}
           fetchOptions={fetchCategories}
-          display={(c) => c?.title || `#${c?.id}`}
+          display={(c) => lookupDisplayName(c)}
           placeholder="همه دسته‌ها"
         />
       </div>

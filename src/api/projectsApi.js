@@ -1,8 +1,13 @@
 import api from "./axios";
 
-export async function getProjects() {
-  const res = await api.get("/api/v1/projects");
+export async function getProjects(params = {}) {
+  const res = await api.get("/api/v1/projects", { params });
   return res.data; // List<ProjectResponse>
+}
+
+export async function getProjectLookups(params = {}) {
+  const res = await api.get("/api/v1/projects/lookup", { params });
+  return res.data; // List<ProjectLookupResponse>
 }
 
 export async function getProjectById(id) {

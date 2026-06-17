@@ -1,8 +1,13 @@
 import api from "./axios";
 
-export async function getItemCategories() {
-  const res = await api.get("/api/v1/item-categories");
+export async function getItemCategories(params = {}) {
+  const res = await api.get("/api/v1/item-categories", { params });
   return res.data; // List<ItemCategoryResponse>
+}
+
+export async function getItemCategoryLookups(params = {}) {
+  const res = await api.get("/api/v1/item-categories/lookup", { params });
+  return res.data; // List<ItemCategoryLookupResponse>
 }
 
 export async function getItemCategoryById(id) {

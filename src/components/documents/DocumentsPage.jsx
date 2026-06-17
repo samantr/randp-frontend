@@ -23,6 +23,7 @@ import { getTransactionById } from "../../api/transactionsApi";
 import { getPersons } from "../../api/personsApi";
 import { getProjects } from "../../api/projectsApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { lookupDisplayName } from "../../utils/lookupOptions";
 
 const MAX_FILE_MB = 10;
 const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
@@ -206,7 +207,7 @@ export default function DocumentsPage({ ownerType }) {
       const projects =
         normalizePageLike(projectsRes).content || projectsRes || [];
       const pr = {};
-      for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
+      for (const p of projects) pr[p.id] = lookupDisplayName(p);
       setProjectsMap(pr);
     } catch {
       setProjectsMap({});

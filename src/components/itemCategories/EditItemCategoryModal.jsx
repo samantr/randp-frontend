@@ -7,6 +7,11 @@ import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { getItemCategories, updateItemCategory } from "../../api/itemCategoriesApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  lookupDisplayName,
+  lookupMatches,
+  sortLookupOptions,
+} from "../../utils/lookupOptions";
 
 export default function EditItemCategoryModal({
   open,
@@ -43,9 +48,9 @@ export default function EditItemCategoryModal({
     const nq = normalizeFaText(q || "");
     const filtered = !nq
       ? candidates
-      : candidates.filter((c) => normalizeFaText(c.title).includes(nq));
+      : candidates.filter((c) => lookupMatches(c, nq));
 
-    return filtered.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+    return filtered.sort(sortLookupOptions);
   }
 
   const canSubmit = useMemo(() => {
@@ -115,7 +120,7 @@ export default function EditItemCategoryModal({
             value={parent?.id ? parent : null}
             onChange={setParent}
             fetchOptions={fetchParents}
-            display={(c) => c?.title || `#${c?.id}`}
+            display={(c) => lookupDisplayName(c)}
             placeholder="بدون والد (ریشه)"
           />
 

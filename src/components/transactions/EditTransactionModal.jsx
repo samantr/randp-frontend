@@ -7,10 +7,15 @@ import toast from "react-hot-toast";
 import LookupSelect from "../lookup/LookupSelect";
 import { updateTransaction } from "../../api/transactionsApi";
 import { searchPersons } from "../../api/personsApi";
-import { getProjects } from "../../api/projectsApi";
+import { getProjectLookups } from "../../api/projectsApi";
 
 import QuickAddPersonModal from "../persons/QuickAddPersonModal";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  lookupDisplayName,
+  lookupMatches,
+  sortLookupOptions,
+} from "../../utils/lookupOptions";
 
 /* ======================
    Jalali Date Picker (same as Dashboard)
@@ -97,8 +102,7 @@ function personDisplayName(p) {
 }
 
 function projectDisplayName(p) {
-  if (!p) return "-";
-  return p.title || `#${p.id}`;
+  return lookupDisplayName(p);
 }
 
 const PAYMENT_TYPES = [
@@ -143,7 +147,7 @@ export default function EditTransactionModal({
     if (!open) return;
     (async () => {
       try {
-        const list = await getProjects();
+        const list = await getProjectLookups();
         setProjectsCache(normalizePageLike(list).content || list || []);
       } catch {}
     })();
@@ -189,6 +193,15 @@ export default function EditTransactionModal({
     setDsc(transaction.dsc || "");
   }, [open, transaction]);
 
+  useEffect(() => {
+    if (!open || !transaction?.projectId || projectsCache.length === 0) return;
+
+    const found = projectsCache.find(
+      (p) => Number(p?.id) === Number(transaction.projectId)
+    );
+    if (found) setProject(found);
+  }, [open, transaction?.projectId, projectsCache]);
+
   const fetchPersons = useCallback(async ({ q }) => {
     const res = await searchPersons({ q: q || "", page: 0, size: 20 });
     return (res?.content || res || []).slice(0, 20);
@@ -199,7 +212,8 @@ export default function EditTransactionModal({
       const needle = (q || "").trim();
       if (!needle) return projectsCache.slice(0, 30);
       return projectsCache
-        .filter((p) => (p?.title || "").includes(needle))
+        .filter((p) => lookupMatches(p, needle))
+        .sort(sortLookupOptions)
         .slice(0, 30);
     },
     [projectsCache]

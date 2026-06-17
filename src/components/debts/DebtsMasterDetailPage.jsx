@@ -21,7 +21,7 @@ import {
   updateDebt,
 } from "../../api/debtsApi";
 
-import { getProjects } from "../../api/projectsApi";
+import { getProjectLookups, getProjects } from "../../api/projectsApi";
 import { getPersons } from "../../api/personsApi";
 import { getItems } from "../../api/itemsApi";
 import { getUnits } from "../../api/unitsApi";
@@ -29,6 +29,7 @@ import { getUnits } from "../../api/unitsApi";
 import QuickAddPersonModal from "../persons/QuickAddPersonModal.jsx";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { lookupDisplayName, lookupMatches } from "../../utils/lookupOptions";
 
 /* ======================
    Jalali Date Picker (same as Dashboard)
@@ -421,7 +422,7 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
         const projects = safeList(projectsRaw);
 
         const pMap = new Map();
-        for (const p of projects) pMap.set(p.id, p.title || `#${p.id}`);
+        for (const p of projects) pMap.set(p.id, lookupDisplayName(p));
         setProjectsMap(pMap);
 
         const peMap = new Map();
@@ -466,10 +467,10 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
 
   // lookups for form
   const fetchProjects = useCallback(async ({ q }) => {
-    const data = safeList(await getProjects());
+    const data = safeList(await getProjectLookups());
     const nq = (q || "").trim();
     if (!nq) return data;
-    return data.filter((x) => String(x?.title || "").includes(nq));
+    return data.filter((x) => lookupMatches(x, nq));
   }, []);
 
   const fetchPersons = useCallback(async ({ q }) => {
@@ -1268,7 +1269,7 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
               value={headerProject}
               onChange={setHeaderProject}
               fetchOptions={fetchProjects}
-              display={(opt) => opt?.title || `#${opt?.id}`}
+              display={(opt) => lookupDisplayName(opt)}
               placeholder="انتخاب پروژه..."
             />
 

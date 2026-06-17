@@ -7,6 +7,11 @@ import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { createItemCategory, getItemCategories } from "../../api/itemCategoriesApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  lookupDisplayName,
+  lookupMatches,
+  sortLookupOptions,
+} from "../../utils/lookupOptions";
 
 export default function QuickAddItemCategoryModal({
   open,
@@ -33,15 +38,10 @@ export default function QuickAddItemCategoryModal({
     const nq = normalizeFaText(q || "");
     const filtered = !nq
       ? all
-      : (all || []).filter((c) => normalizeFaText(c.title).includes(nq));
+      : (all || []).filter((c) => lookupMatches(c, nq));
 
     // sort: root first, then by title
-    return filtered.sort((a, b) => {
-      const ap = a.parentId ? 1 : 0;
-      const bp = b.parentId ? 1 : 0;
-      if (ap !== bp) return ap - bp;
-      return (a.title || "").localeCompare(b.title || "");
-    });
+    return filtered.sort(sortLookupOptions);
   }
 
   async function handleCreate() {
@@ -93,7 +93,7 @@ export default function QuickAddItemCategoryModal({
           value={parent}
           onChange={setParent}
           fetchOptions={fetchParents}
-          display={(c) => (c?.title ? c.title : `#${c?.id}`)}
+          display={(c) => lookupDisplayName(c)}
           placeholder="بدون والد (ریشه)"
         />
 

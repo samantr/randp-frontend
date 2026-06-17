@@ -6,8 +6,13 @@ import toast from "react-hot-toast";
 import LookupSelect from "../lookup/LookupSelect";
 import { normalizeFaText } from "../../utils/normalizeFa";
 import { createItem } from "../../api/itemsApi";
-import { getItemCategories } from "../../api/itemCategoriesApi";
+import { getItemCategoryLookups } from "../../api/itemCategoriesApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import {
+  lookupDisplayName,
+  lookupMatches,
+  sortLookupOptions,
+} from "../../utils/lookupOptions";
 
 export default function QuickAddItemModal({
   open,
@@ -43,12 +48,12 @@ export default function QuickAddItemModal({
   const liveQuery = useMemo(() => normalizeFaText(`${code} ${title}`.trim()), [code, title]);
 
   async function fetchCategories({ q }) {
-    const all = await getItemCategories();
+    const all = await getItemCategoryLookups();
     const nq = normalizeFaText(q || "");
     const filtered = !nq
       ? all
-      : (all || []).filter((c) => normalizeFaText(c.title).includes(nq));
-    return filtered.sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+      : (all || []).filter((c) => lookupMatches(c, nq));
+    return filtered.sort(sortLookupOptions);
   }
 
   async function handleCreate() {
@@ -103,7 +108,7 @@ export default function QuickAddItemModal({
             value={category}
             onChange={setCategory}
             fetchOptions={fetchCategories}
-            display={(c) => c?.title || `#${c?.id}`}
+            display={(c) => lookupDisplayName(c)}
             placeholder="انتخاب دسته‌بندی..."
             onQuickAdd={onOpenQuickAddCategory}
           />

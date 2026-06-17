@@ -22,6 +22,7 @@ import EditTransactionModal from "./EditTransactionModal";
 
 import { getPersons } from "../../api/personsApi";
 import { getProjects } from "../../api/projectsApi";
+import { lookupDisplayName } from "../../utils/lookupOptions";
 
 /* ======================
    Jalali helpers (DISPLAY ONLY)
@@ -279,7 +280,7 @@ export default function TransactionsListPage() {
       const projects =
         normalizePageLike(projectsRes).content || projectsRes || [];
       const pr = {};
-      for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
+      for (const p of projects) pr[p.id] = lookupDisplayName(p);
       setProjectsMap(pr);
     } catch {}
   }, []);

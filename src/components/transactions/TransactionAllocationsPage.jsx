@@ -19,6 +19,7 @@ import {
   listDebtCandidatesForTransaction,
 } from "../../api/transactionAllocationsApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
+import { lookupDisplayName } from "../../utils/lookupOptions";
 
 function openDebtInNewTab(debtId) {
   if (!debtId) return;
@@ -199,7 +200,7 @@ export default function TransactionAllocationsPage() {
         const projects =
           normalizePageLike(projectsRes).content || projectsRes || [];
         const pr = {};
-        for (const p of projects) pr[p.id] = p.title || `#${p.id}`;
+        for (const p of projects) pr[p.id] = lookupDisplayName(p);
         if (alive) setProjectsMap(pr);
       } catch {
         if (alive) setProjectsMap({});
