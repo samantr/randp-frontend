@@ -18,11 +18,11 @@ import {
 } from "../../api/debtAllocationsApi";
 import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
-function openTransactionInNewTab(tx) {
-  if (!tx?.code) return;
+function openTransactionInNewTab(transactionId) {
+  if (!transactionId) return;
 
   const params = new URLSearchParams();
-  params.set("cf_code", tx.code);
+  params.set("transactionId", String(transactionId));
   params.set("page", "0");
 
   const url = `/transactions?${params.toString()}`;
@@ -414,7 +414,7 @@ export default function DebtAllocationsPage() {
                         <div className="flex gap-2 flex-wrap">
                           <Button
                             variant="secondary"
-                            onClick={() => openTransactionInNewTab(tx)}
+                            onClick={() => openTransactionInNewTab(r.transactionId)}
                             disabled={!tx}
                             title="مشاهده در لیست تراکنش‌ها"
                           >

@@ -82,7 +82,16 @@ function moneyFa(v) {
 }
 
 function normalizeText(v) {
-  return String(v ?? "").trim().toLowerCase();
+  return String(v ?? "")
+    .replace(/[۰-۹]/g, (digit) =>
+      String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)),
+    )
+    .replace(/[٠-٩]/g, (digit) =>
+      String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
+    )
+    .replace(/[,\u066C]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 function toDateSortable(v) {
@@ -98,7 +107,6 @@ const EMPTY_CF = {
   dateDue: "",
   amountPaid: "",
   relatedAmount: "",
-  allocatedAmount: "",
   allocatedAmount: "",
   remainingAmount: "",
   paymentType: "",
@@ -278,6 +286,7 @@ export default function TransactionsListPage() {
 
   const lastAppliedUrlRef = useRef("");
   const lastPushedStateRef = useRef("");
+  const latestRequestRef = useRef(0);
 
   const initial = useMemo(
     () => parseStateFromSearchParams(searchParams),
@@ -377,6 +386,7 @@ useEffect(() => {
 
  const load = useCallback(
   async ({ nextPage = page } = {}) => {
+    const requestId = ++latestRequestRef.current;
     setLoading(true);
 
     try {
@@ -385,10 +395,17 @@ useEffect(() => {
         size,
         q: "",
         ...exactFilters,
+        amountPaid: cf.amountPaid,
       });
 
-      setData(normalizePageLike(response));
+      if (requestId === latestRequestRef.current) {
+        setData(normalizePageLike(response));
+      }
     } catch (error) {
+      if (requestId !== latestRequestRef.current) {
+        return;
+      }
+
       toast.error(
         getApiErrorMessage(
           error,
@@ -401,10 +418,12 @@ useEffect(() => {
         totalPages: 0,
       });
     } finally {
-      setLoading(false);
+      if (requestId === latestRequestRef.current) {
+        setLoading(false);
+      }
     }
   },
-  [page, size, exactFilters],
+  [page, size, exactFilters , cf.amountPaid,],
 );
 
   useEffect(() => {
@@ -459,6 +478,9 @@ const filteredSortedRows = useMemo(() => {
 
   const filtered = rows.filter((row) => {
     for (const key of Object.keys(cf)) {
+      // This filter is applied by the backend before pagination.
+      if (key === "amountPaid") continue;
+
       const needle = normalizeText(cf[key]);
 
       if (!needle) continue;
@@ -495,6 +517,20 @@ const filteredSortedRows = useMemo(() => {
         (toDateSortable(first.dateRegistered) -
           toDateSortable(second.dateRegistered))
       );
+    }
+
+    if (
+      [
+        "amountPaid",
+        "relatedAmount",
+        "allocatedAmount",
+        "remainingAmount",
+      ].includes(sort.key)
+    ) {
+      const firstValue = Number(rowValue(first, sort.key) || 0);
+      const secondValue = Number(rowValue(second, sort.key) || 0);
+
+      return direction * (firstValue - secondValue);
     }
 
     const firstValue = normalizeText(
@@ -705,9 +741,14 @@ const filteredSortedRows = useMemo(() => {
               <th className="py-2">
                 <HeaderFilterInput
                   value={cf.amountPaid}
-                  onChange={(e) =>
-                    setCf((p) => ({ ...p, amountPaid: e.target.value }))
-                  }
+                onChange={(e) => {
+                    setPage(0);
+
+                    setCf((previous) => ({
+                      ...previous,
+                      amountPaid: e.target.value,
+                    }));
+                  }}
                 />
               </th>
 

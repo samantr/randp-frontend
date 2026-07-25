@@ -1,5 +1,17 @@
 import api from "./axios";
 
+function normalizeNumericFilter(value) {
+  return String(value ?? "")
+    .replace(/[۰-۹]/g, (digit) =>
+      String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)),
+    )
+    .replace(/[٠-٩]/g, (digit) =>
+      String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)),
+    )
+    .replace(/[,\u066C\s]/g, "")
+    .trim();
+}
+
 export async function getTransactions({
   page = 0,
   size = 20,
@@ -12,6 +24,7 @@ export async function getTransactions({
   transactionType = "",
   from = "",
   to = "",
+  amountPaid = "",
 } = {}) {
   const params = { page, size };
 
@@ -47,6 +60,13 @@ export async function getTransactions({
 
   if (to?.trim()) {
     params.to = to.trim();
+  }
+
+  const normalizedAmountPaid =
+    normalizeNumericFilter(amountPaid);
+
+  if (normalizedAmountPaid) {
+    params.amountPaid = normalizedAmountPaid;
   }
 
   const res = await api.get("/api/v1/transactions", {
