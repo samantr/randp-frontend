@@ -97,11 +97,24 @@ const EMPTY_CF = {
   to: "",
   dateDue: "",
   amountPaid: "",
+  relatedAmount: "",
+  allocatedAmount: "",
   allocatedAmount: "",
   remainingAmount: "",
   paymentType: "",
   transactionType: "",
   dsc: "",
+};
+
+const EMPTY_EXACT_FILTERS = {
+  transactionId: null,
+  projectId: null,
+  categoryId: null,
+  fromPid: null,
+  toPid: null,
+  transactionType: "",
+  from: "",
+  to: "",
 };
 
 const CF_KEYS = Object.keys(EMPTY_CF);
@@ -111,18 +124,20 @@ function parseIntSafe(v, fallback = 0) {
   return Number.isFinite(n) && n >= 0 ? n : fallback;
 }
 
-function parseNullableInt(v) {
-  if (v == null) return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
+function parseNullableInt(value) {
+  if (value == null || String(value).trim() === "") {
+    return null;
+  }
+
+  const number = Number(value);
+
+  return Number.isSafeInteger(number) && number > 0
+    ? number
+    : null;
 }
 
 function parseStateFromSearchParams(sp) {
   const page = parseIntSafe(sp.get("page"), 0);
-
-  // ✅ exact id filters (from Dashboard drill)
-  const toPid = parseNullableInt(sp.get("toPid"));
-  const fromPid = parseNullableInt(sp.get("fromPid"));
 
   const sortKey = sp.get("sortKey");
   const sortDir = sp.get("sortDir");
@@ -133,39 +148,92 @@ function parseStateFromSearchParams(sp) {
       : { key: "dateRegistered", dir: "desc" };
 
   const cf = { ...EMPTY_CF };
-  for (const k of CF_KEYS) {
-    const v = sp.get(`cf_${k}`);
-    cf[k] = v ?? "";
+
+  for (const key of CF_KEYS) {
+    cf[key] = sp.get(`cf_${key}`) ?? "";
   }
 
-  return { page, sort, cf, toPid, fromPid };
+  const exactFilters = {
+    transactionId: parseNullableInt(
+      sp.get("transactionId"),
+    ),
+    projectId: parseNullableInt(sp.get("projectId")),
+    categoryId: parseNullableInt(sp.get("categoryId")),
+    fromPid: parseNullableInt(sp.get("fromPid")),
+    toPid: parseNullableInt(sp.get("toPid")),
+    transactionType: sp.get("transactionType") ?? "",
+    from: sp.get("from") ?? "",
+    to: sp.get("to") ?? "",
+  };
+
+  return {
+    page,
+    sort,
+    cf,
+    exactFilters,
+  };
 }
 
-
-
-function buildSearchParamsObject({ page, sort, cf, toPid, fromPid }) {
-  const params = {};
-  params.page = String(page ?? 0);
+function buildSearchParamsObject({
+  page,
+  sort,
+  cf,
+  exactFilters,
+}) {
+  const params = {
+    page: String(page ?? 0),
+  };
 
   if (sort?.key && sort?.dir) {
     params.sortKey = sort.key;
     params.sortDir = sort.dir;
   }
 
-  // ✅ keep id filters in URL
-  if (toPid != null) params.toPid = String(toPid);
-  if (fromPid != null) params.fromPid = String(fromPid);
+  const filters = exactFilters ?? EMPTY_EXACT_FILTERS;
 
-  for (const k of CF_KEYS) {
-    const v = cf?.[k];
-    if (v != null && String(v).trim() !== "") {
-      params[`cf_${k}`] = String(v);
+  if (filters.transactionId != null) {
+    params.transactionId = String(filters.transactionId);
+  }
+
+  if (filters.projectId != null) {
+    params.projectId = String(filters.projectId);
+  }
+
+  if (filters.categoryId != null) {
+    params.categoryId = String(filters.categoryId);
+  }
+
+  if (filters.fromPid != null) {
+    params.fromPid = String(filters.fromPid);
+  }
+
+  if (filters.toPid != null) {
+    params.toPid = String(filters.toPid);
+  }
+
+  if (filters.transactionType?.trim()) {
+    params.transactionType =
+      filters.transactionType.trim();
+  }
+
+  if (filters.from?.trim()) {
+    params.from = filters.from.trim();
+  }
+
+  if (filters.to?.trim()) {
+    params.to = filters.to.trim();
+  }
+
+  for (const key of CF_KEYS) {
+    const value = cf?.[key];
+
+    if (value != null && String(value).trim() !== "") {
+      params[`cf_${key}`] = String(value);
     }
   }
 
   return params;
 }
-
 
 function stableSerializeParamsObject(obj) {
   const keys = Object.keys(obj).sort();
@@ -232,40 +300,58 @@ export default function TransactionsListPage() {
   const [cf, setCf] = useState(initial.cf);
   const [sort, setSort] = useState(initial.sort);
 
-  // ✅ exact person id filters (URL: ?toPid=123 / ?fromPid=123)
-  const [toPid, setToPid] = useState(initial.toPid ?? null);
-  const [fromPid, setFromPid] = useState(initial.fromPid ?? null);
+  const [exactFilters, setExactFilters] = useState(
+    initial.exactFilters,
+  );
 
   const [personsMap, setPersonsMap] = useState({});
   const [projectsMap, setProjectsMap] = useState({});
 
   useEffect(() => {
-    const parsed = parseStateFromSearchParams(searchParams);
-    const nextObj = buildSearchParamsObject(parsed);
-    const nextSig = stableSerializeParamsObject(nextObj);
+  const parsed = parseStateFromSearchParams(searchParams);
 
-    if (nextSig === lastAppliedUrlRef.current) return;
-    lastAppliedUrlRef.current = nextSig;
+  const nextObject = buildSearchParamsObject(parsed);
+  const nextSignature =
+    stableSerializeParamsObject(nextObject);
 
-    setPage(parsed.page);
-    setSort(parsed.sort);
-    setCf(parsed.cf);
+  if (nextSignature === lastAppliedUrlRef.current) {
+    return;
+  }
 
-    setToPid(parsed.toPid ?? null);
-    setFromPid(parsed.fromPid ?? null);
+  lastAppliedUrlRef.current = nextSignature;
 
-  }, [searchParams]);
+  setPage(parsed.page);
+  setSort(parsed.sort);
+  setCf(parsed.cf);
+  setExactFilters(parsed.exactFilters);
+}, [searchParams]);
 
-  useEffect(() => {
-    const obj = buildSearchParamsObject({  page, sort, cf, toPid, fromPid });
-    const sig = stableSerializeParamsObject(obj);
+useEffect(() => {
+  const object = buildSearchParamsObject({
+    page,
+    sort,
+    cf,
+    exactFilters,
+  });
 
-    if (sig === lastPushedStateRef.current) return;
-    lastPushedStateRef.current = sig;
+  const signature = stableSerializeParamsObject(object);
 
-    setSearchParams(obj, { replace: true });
-  }, [ page, sort, cf, toPid, fromPid, setSearchParams]);
+  if (signature === lastPushedStateRef.current) {
+    return;
+  }
 
+  lastPushedStateRef.current = signature;
+
+  setSearchParams(object, { replace: true });
+}, [
+  page,
+  sort,
+  cf,
+  exactFilters,
+  setSearchParams,
+]);
+
+ 
   const loadLookups = useCallback(async () => {
     try {
       const personsRes = await getPersons({ page: 0, size: 5000, q: "" });
@@ -289,21 +375,37 @@ export default function TransactionsListPage() {
     loadLookups();
   }, [loadLookups]);
 
-  const load = useCallback(
-    async ({ nextPage = page } = {}) => {
-      setLoading(true);
-      try {
-        const res = await getTransactions({ q: "", page: nextPage, size });
-        setData(normalizePageLike(res));
-      } catch (e) {
-        toast.error(getApiErrorMessage(e, "خطا در دریافت لیست تراکنش‌ها"));
-        setData({ content: [], totalPages: 0 });
-      } finally {
-        setLoading(false);
-      }
-    },
-    [page, size]
-  );
+ const load = useCallback(
+  async ({ nextPage = page } = {}) => {
+    setLoading(true);
+
+    try {
+      const response = await getTransactions({
+        page: nextPage,
+        size,
+        q: "",
+        ...exactFilters,
+      });
+
+      setData(normalizePageLike(response));
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(
+          error,
+          "خطا در دریافت لیست تراکنش‌ها",
+        ),
+      );
+
+      setData({
+        content: [],
+        totalPages: 0,
+      });
+    } finally {
+      setLoading(false);
+    }
+  },
+  [page, size, exactFilters],
+);
 
   useEffect(() => {
     const t = setTimeout(load, 150);
@@ -343,58 +445,72 @@ export default function TransactionsListPage() {
       if (key === "transactionType")
         return transactionTypeLabel(r.transactionType);
 
+      if (key === "relatedAmount") {
+        return r.relatedAmount ?? "";
+      }
+
       return r[key] ?? "";
     },
     [personsMap, projectsMap]
   );
 
-  const filteredSortedRows = useMemo(() => {
-    const rows = data.content || [];
+const filteredSortedRows = useMemo(() => {
+  const rows = data.content || [];
 
-    const filtered = rows.filter((r) => {
-  // ✅ exact ID filters first
-  if (toPid != null) {
-    const rid = r.toPersonId || r.toPerson?.id;
-    if (Number(rid) !== Number(toPid)) return false;
+  const filtered = rows.filter((row) => {
+    for (const key of Object.keys(cf)) {
+      const needle = normalizeText(cf[key]);
+
+      if (!needle) continue;
+
+      const value = rowValue(row, key);
+      const haystack = normalizeText(value);
+
+      if (!haystack.includes(needle)) {
+        return false;
+      }
+    }
+
+    return true;
+  });
+
+  if (!sort.key || !sort.dir) {
+    return filtered;
   }
-  if (fromPid != null) {
-    const rid = r.fromPersonId || r.fromPerson?.id;
-    if (Number(rid) !== Number(fromPid)) return false;
-  }
 
-  for (const k of Object.keys(cf)) {
-    const needle = normalizeText(cf[k]);
-    if (!needle) continue;
+  const direction = sort.dir === "asc" ? 1 : -1;
 
-    const val = rowValue(r, k);
-    const hay = normalizeText(val);
-    if (!hay.includes(needle)) return false;
-  }
-  return true;
-});
+  return [...filtered].sort((first, second) => {
+    if (sort.key === "dateDue") {
+      return (
+        direction *
+        (toDateSortable(first.dateDue) -
+          toDateSortable(second.dateDue))
+      );
+    }
 
+    if (sort.key === "dateRegistered") {
+      return (
+        direction *
+        (toDateSortable(first.dateRegistered) -
+          toDateSortable(second.dateRegistered))
+      );
+    }
 
-    if (!sort.key || !sort.dir) return filtered;
+    const firstValue = normalizeText(
+      rowValue(first, sort.key),
+    );
 
-    const dirMul = sort.dir === "asc" ? 1 : -1;
+    const secondValue = normalizeText(
+      rowValue(second, sort.key),
+    );
 
-    return [...filtered].sort((a, b) => {
-      if (sort.key === "dateDue")
-        return dirMul * (toDateSortable(a.dateDue) - toDateSortable(b.dateDue));
-      if (sort.key === "dateRegistered")
-        return (
-          dirMul *
-          (toDateSortable(a.dateRegistered) -
-            toDateSortable(b.dateRegistered))
-        );
+    if (firstValue < secondValue) return -1 * direction;
+    if (firstValue > secondValue) return 1 * direction;
 
-      const va = normalizeText(rowValue(a, sort.key));
-      const vb = normalizeText(rowValue(b, sort.key));
-      if (va < vb) return -1 * dirMul;
-      if (va > vb) return 1 * dirMul;
-      return 0;
-    });
-  }, [data.content, cf, sort, rowValue, toPid, fromPid]);
+    return 0;
+  });
+}, [data.content, cf, sort, rowValue]);
 
   function toggleSort(key) {
     setSort((prev) => {
@@ -420,6 +536,8 @@ export default function TransactionsListPage() {
     }
   }
 
+  const showRelatedAmount =
+  exactFilters.categoryId != null;
 
   return (
     <>
@@ -483,6 +601,15 @@ export default function TransactionsListPage() {
                 />
               </th>
 
+              {showRelatedAmount && (
+                <th className="py-2 text-right w-32">
+                  <SortableHeader
+                    title="مبلغ مرتبط"
+                    icon={sortIcon("relatedAmount")}
+                    onClick={() => toggleSort("relatedAmount")}
+                  />
+                </th>
+              )}
               <th className="py-2 text-right w-28">
                 <SortableHeader
                   title="تخصیص"
@@ -584,6 +711,19 @@ export default function TransactionsListPage() {
                 />
               </th>
 
+              {showRelatedAmount && (
+                <th className="py-2">
+                  <HeaderFilterInput
+                    value={cf.relatedAmount}
+                    onChange={(event) =>
+                      setCf((previous) => ({
+                        ...previous,
+                        relatedAmount: event.target.value,
+                      }))
+                    }
+                  />
+                </th>
+              )}
               <th className="py-2">
                 <HeaderFilterInput
                   value={cf.allocatedAmount}
@@ -635,8 +775,9 @@ export default function TransactionsListPage() {
                   className="w-full rounded-lg border border-zinc-200 px-2 py-1 text-xs hover:bg-white"
                   onClick={() => {
                     setCf({ ...EMPTY_CF });
+                    setExactFilters({ ...EMPTY_EXACT_FILTERS });
                     setSort({ key: null, dir: null });
-                    // optional: setPage(0);  // uncomment if you want clear to jump to first page
+                    setPage(0);
                   }}
                 >
                   پاک‌کردن
@@ -648,13 +789,13 @@ export default function TransactionsListPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={13} className="py-4 text-center text-zinc-500">
+                <td colSpan={showRelatedAmount ? 14 : 13} className="py-4 text-center text-zinc-500">
                   در حال بارگذاری...
                 </td>
               </tr>
             ) : filteredSortedRows.length === 0 ? (
               <tr>
-                <td colSpan={13} className="py-4 text-center text-zinc-500">
+                <td colSpan={showRelatedAmount ? 14 : 13} className="py-4 text-center text-zinc-500">
                   موردی یافت نشد.
                 </td>
               </tr>
@@ -676,6 +817,15 @@ export default function TransactionsListPage() {
                     <td className="py-2 font-semibold">
                       {r.amountPaid != null ? moneyFa(r.amountPaid) : "-"}
                     </td>
+
+                    {showRelatedAmount && (
+                      <td className="py-2 font-semibold text-blue-700">
+                        {r.relatedAmount != null
+                          ? moneyFa(r.relatedAmount)
+                          : "-"}
+                      </td>
+                    )}
+
                     <td className="py-2 font-semibold">
                       {r.allocatedAmount != null
                         ? moneyFa(r.allocatedAmount)

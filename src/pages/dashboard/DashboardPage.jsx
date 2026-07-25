@@ -1,260 +1,143 @@
 import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
-import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
-// ✅ use working ones from dashboardApi (axios-based)
 import {
-  getDashboardSummary,
-  getLastRefresh,
-  getTopPayers,
-  getTopReceivers,
-  refreshDashboardMart,
-  getPersonsSummary,
-  getPersonPayables,
-  getItemsByCategory,
-  getItemCategoriesTree,
-  getDebtAgingByPerson,
   downloadPersonOperationsExcel,
+  getDashboardSummary,
+  getItemCategoriesSummary,
+  getLastRefresh,
+  getPersonPayables,
+  getPersonsSummary,
+  getProjectsSummary,
+  getUnallocatedOverview,
+  refreshDashboardMart,
 } from "../../api/dashboardApi";
 
-import api from "../../api/axios";
+import { getApiErrorMessage } from "../../utils/getApiErrorMessage";
 
-import {
-  ResponsiveContainer,
-  PieChart,
-  Pie,
-  Cell,
-  Legend,
-  Tooltip,
-} from "recharts";
-
-/* ======================
-   Jalali Date Picker
-   ====================== */
 import DatePicker from "react-multi-date-picker";
 import DateObject from "react-date-object";
 import persian from "react-date-object/calendars/persian";
 import gregorian from "react-date-object/calendars/gregorian";
 import persian_fa from "react-date-object/locales/persian_fa";
 
-/* ======================
-   UI Helpers
-   ====================== */
-const COLORS = [
-  "#2563EB", // blue
-  "#DC2626", // red
-  "#16A34A", // green
-  "#F59E0B", // amber
-  "#7C3AED", // purple
-  "#06B6D4", // cyan
-  "#F97316", // orange
-  "#DB2777", // pink
-];
-
-function formatNumber(x) {
-  try {
-    if (x === null || x === undefined) return "۰";
-    const n = typeof x === "string" ? Number(x) : x;
-    return new Intl.NumberFormat("fa-IR").format(n);
-  } catch {
-    return String(x ?? "۰");
+function formatNumber(value) {
+  if (value === null || value === undefined || value === "") {
+    return "۰";
   }
+
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return String(value);
+  }
+
+  return new Intl.NumberFormat("fa-IR").format(number);
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10); // yyyy-MM-dd
+  return new Date().toISOString().slice(0, 10);
 }
+
 function addDaysISO(iso, days) {
-  const d = new Date(iso);
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
+  const date = new Date(iso);
+  date.setDate(date.getDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
-function buildCategoryTree(flatRows) {
-  const byId = new Map();
-  const roots = [];
-
-  (flatRows || []).forEach((r) => {
-    const id = r.itemCategoryId ?? r.item_category_id;
-    const parentId = r.parentItemCategoryId ?? r.parent_item_category_id;
-
-    byId.set(id, { ...r, id, parentId, children: [] });
-  });
-
-  byId.forEach((node) => {
-    if (node.parentId && byId.has(node.parentId)) {
-      byId.get(node.parentId).children.push(node);
-    } else {
-      roots.push(node);
-    }
-  });
-
-  const sortRec = (arr) => {
-    arr.sort((a, b) =>
-      String(a.title || "").localeCompare(String(b.title || ""), "fa"),
-    );
-    arr.forEach((x) => sortRec(x.children || []));
-  };
-  sortRec(roots);
-
-  return roots;
-}
-
-// open Debts page in a new tab, filtered by clicked item
-function openDebtsByItemInNewTab(it) {
-  const id = it?.itemId ?? it?.item_id ?? it?.id;
-  if (!id) return;
-
-  // Debts page reads item filter from query param: iid
-  const url = `/debts?iid=${encodeURIComponent(id)}`;
-  window.open(url, "_blank", "noopener,noreferrer");
-}
-
-/* ======================
-   ISO <-> Jalali helpers
-   ====================== */
 function isoToPersianDateObject(iso) {
   if (!iso) return null;
-  // parse ISO as Gregorian, then convert to Persian for display
-  const d = new DateObject({
+
+  return new DateObject({
     date: iso,
+    format: "YYYY-MM-DD",
     calendar: gregorian,
     locale: persian_fa,
-  });
-  return d.convert(persian);
+  }).convert(persian);
 }
 
-function persianDateObjectToIso(pDateObj) {
-  if (!pDateObj) return null;
-  const g = pDateObj.convert(gregorian);
-  // ensure YYYY-MM-DD
-  const yyyy = String(g.year).padStart(4, "0");
-  const mm = String(g.month.number).padStart(2, "0");
-  const dd = String(g.day).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+function persianDateObjectToIso(value) {
+  if (!value) return null;
+
+  const gregorianDate = new DateObject(value).convert(gregorian);
+
+  const year = String(gregorianDate.year).padStart(4, "0");
+  const month = String(gregorianDate.month.number).padStart(2, "0");
+  const day = String(gregorianDate.day).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
-/* ======================
-   Mini Components
-   ====================== */
+function normalizePersianText(value) {
+  return String(value ?? "")
+    .replace(/ي/g, "ی")
+    .replace(/ك/g, "ک")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("fa");
+}
+
 function Card({ title, children }) {
   return (
-    <div className="bg-white border rounded-2xl shadow-sm p-4">
+    <div className="rounded-2xl border bg-white p-4 shadow-sm">
       {title ? (
-        <div className="text-sm font-semibold text-zinc-700 mb-2">{title}</div>
+        <div className="mb-3 text-sm font-semibold text-zinc-700">
+          {title}
+        </div>
       ) : null}
+
       {children}
     </div>
   );
 }
 
-function MiniTable({ title, subtitle, children }) {
+function Section({ title, subtitle, children }) {
   return (
-    <Card title={title}>
-      {subtitle ? (
-        <div className="text-xs text-zinc-500 mb-3">{subtitle}</div>
-      ) : null}
+    <Card>
+      <div className="mb-3">
+        <div className="text-sm font-semibold text-zinc-800">{title}</div>
+
+        {subtitle ? (
+          <div className="mt-1 text-xs text-zinc-500">{subtitle}</div>
+        ) : null}
+      </div>
+
       {children}
     </Card>
   );
 }
 
+function EmptyState() {
+  return <div className="py-3 text-xs text-zinc-500">داده‌ای وجود ندارد</div>;
+}
+
 function Modal({ open, title, onClose, children }) {
   if (!open) return null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="bg-white w-full max-w-5xl rounded-2xl shadow-lg border">
-        <div className="flex items-center justify-between px-4 py-3 border-b">
+      <div className="w-full max-w-5xl rounded-2xl border bg-white shadow-lg">
+        <div className="flex items-center justify-between border-b px-4 py-3">
           <div className="text-sm font-semibold">{title}</div>
+
           <button
-            className="px-3 py-1 text-xs rounded-lg border hover:bg-zinc-50"
+            type="button"
+            className="rounded-lg border px-3 py-1 text-xs hover:bg-zinc-50"
             onClick={onClose}
           >
             بستن
           </button>
         </div>
+
         <div className="p-4">{children}</div>
       </div>
     </div>
   );
 }
 
-function PieCard({ title, rows }) {
-  const data = (rows || []).map((r) => ({
-    name: r.title ?? r.displayName ?? r.display_name ?? "-",
-    value: Number(r.amount ?? r.totalPaid ?? r.totalReceived ?? 0),
-  }));
-
-  return (
-    <Card title={title}>
-      {data.length === 0 ? (
-        <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-      ) : (
-        <div className="h-[260px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <PieChart>
-              <Pie
-                data={data}
-                dataKey="value"
-                nameKey="name"
-                outerRadius={90}
-                label={false}
-              >
-                {data.map((_, i) => (
-                  <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip formatter={(v) => formatNumber(v)} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-    </Card>
-  );
-}
-
-/* ======================
-   Custom API helpers (existing)
-   ====================== */
-async function apiGetOpenDebtsCoverage({ from, to, limit }) {
-  const res = await api.get("/api/v1/dashboard/open-debts-coverage", {
-    params: { from, to, limit },
-  });
-  return res.data;
-}
-
-async function apiGetUnallocatedOverview({ from, to, limit }) {
-  const res = await api.get("/api/v1/dashboard/unallocated", {
-    params: { from, to, limit },
-  });
-  return res.data;
-}
-
-async function apiGetRecentActivities({ limit }) {
-  const res = await api.get("/api/v1/dashboard/recent-activities", {
-    params: { limit },
-  });
-  return res.data;
-}
-
-async function apiGetExecutiveKpis({ from, to, asOf }) {
-  const res = await api.get("/api/v1/dashboard/executive-kpis", {
-    params: { from, to, asOf },
-  });
-  return res.data;
-}
-
-/* ======================
-   Page
-   ====================== */
 export default function DashboardPage() {
-  // default range: last 30 days
   const [from, setFrom] = useState(addDaysISO(todayISO(), -1000));
   const [to, setTo] = useState(todayISO());
-
-  const fromPersian = useMemo(() => isoToPersianDateObject(from), [from]);
-  const toPersian = useMemo(() => isoToPersianDateObject(to), [to]);
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -262,150 +145,138 @@ export default function DashboardPage() {
   const [kpis, setKpis] = useState(null);
   const [lastRefresh, setLastRefresh] = useState(null);
 
-  // pie charts
-  const [topPayers, setTopPayers] = useState([]);
-  const [topReceivers, setTopReceivers] = useState([]);
-
-  // persons drill
   const [personsSummary, setPersonsSummary] = useState([]);
+  const [projectsSummary, setProjectsSummary] = useState([]);
+  const [categoriesSummary, setCategoriesSummary] = useState([]);
+
+  const [openDebts, setOpenDebts] = useState([]);
+  const [openExpenses, setOpenExpenses] = useState([]);
+
+  const [personFilter, setPersonFilter] = useState("");
   const [selectedPerson, setSelectedPerson] = useState(null);
   const [personPayables, setPersonPayables] = useState([]);
   const [payablesLoading, setPayablesLoading] = useState(false);
+  const [downloadingPersonId, setDownloadingPersonId] = useState(null);
 
-  // item categories drill (tree)
-  const [itemCategoriesTree, setItemCategoriesTree] = useState([]);
-  const [expandedCats, setExpandedCats] = useState(() => new Set());
-  const [selectedItemCategory, setSelectedItemCategory] = useState(null);
-  const [itemsByCategory, setItemsByCategory] = useState([]);
-  const [itemsByCategoryLoading, setItemsByCategoryLoading] = useState(false);
+  const fromPersian = useMemo(
+    () => isoToPersianDateObject(from),
+    [from],
+  );
 
-  // debt aging (person only) — simplified columns
-  const [debtAgingPersons, setDebtAgingPersons] = useState([]);
+  const toPersian = useMemo(
+    () => isoToPersianDateObject(to),
+    [to],
+  );
 
-  // open debts vs covered
-  const [openDebtsCoverage, setOpenDebtsCoverage] = useState([]);
+  const filteredPersons = useMemo(() => {
+    const filter = normalizePersianText(personFilter);
 
-  // unallocated overview
-  const [unallocatedOpenDebts, setUnallocatedOpenDebts] = useState([]);
-  const [unallocatedExpenseTxs, setUnallocatedExpenseTxs] = useState([]);
+    if (!filter) {
+      return personsSummary;
+    }
 
-  // recent activity feed
-  const [recentActivities, setRecentActivities] = useState([]);
+    return personsSummary.filter((person) =>
+      normalizePersianText(
+        person.displayName ?? person.display_name,
+      ).includes(filter),
+    );
+  }, [personsSummary, personFilter]);
 
-  // executive totals (only used for 2 cards)
-  const [execKpis, setExecKpis] = useState(null);
-
-  // --- helpers (paste near top of DashboardPage.jsx) ---
-  const openInNewTab = (url) => {
+  function openInNewTab(url) {
     window.open(url, "_blank", "noopener,noreferrer");
-  };
-
-  const moneyCellLinkStyle = {
-    cursor: "pointer",
-    color: "var(--primary, #1677ff)",
-    textDecoration: "underline",
-    fontWeight: 600,
-    whiteSpace: "nowrap",
-  };
+  }
 
   async function loadAll() {
+    if (to < from) {
+      toast.error("بازه تاریخ نامعتبر است");
+      return;
+    }
+
     setLoading(true);
-    setSelectedItemCategory(null);
-    setItemsByCategory([]);
-    const calls = {
-      summary: () => getDashboardSummary({ from, to }),
-      topPayers: () => getTopPayers({ from, to, limit: 10 }),
-      topReceivers: () => getTopReceivers({ from, to, limit: 10 }),
-      lastRefresh: () => getLastRefresh(),
 
-      personsSummary: () => getPersonsSummary({ from, to, limit: 50 }),
-      itemCategoriesTree: () =>
-        getItemCategoriesTree({ from, to, onlyActive: true }),
-
-      // simplified aging: still fetched, but UI shows only person + open_total
-      debtAgingPersons: () =>
-        getDebtAgingByPerson({ from, to, asOf: to, limit: 50 }),
-
-      openDebtsCoverage: () => apiGetOpenDebtsCoverage({ from, to, limit: 50 }),
-
-      unallocatedOverview: () =>
-        apiGetUnallocatedOverview({ from, to, limit: 50 }),
-
-      recentActivities: () => apiGetRecentActivities({ limit: 20 }),
-
-      executiveKpis: () => apiGetExecutiveKpis({ from, to, asOf: to }),
-    };
+    const requests = [
+      {
+        key: "summary",
+        label: "خلاصه داشبورد",
+        request: getDashboardSummary({ from, to }),
+      },
+      {
+        key: "lastRefresh",
+        label: "آخرین بروزرسانی",
+        request: getLastRefresh(),
+      },
+      {
+        key: "persons",
+        label: "خلاصه اشخاص",
+        request: getPersonsSummary({ from, to, limit: 200 }),
+      },
+      {
+        key: "projects",
+        label: "خلاصه پروژه‌ها",
+        request: getProjectsSummary({ from, to, limit: 200 }),
+      },
+      {
+        key: "categories",
+        label: "خلاصه دسته‌بندی‌ها",
+        request: getItemCategoriesSummary({ from, to, limit: 200 }),
+      },
+      {
+        key: "unallocated",
+        label: "هزینه‌ها و بدهی‌های باز",
+        request: getUnallocatedOverview({ from, to, limit: 50 }),
+      },
+    ];
 
     try {
-      const entries = Object.entries(calls);
-      const results = await Promise.allSettled(entries.map(([, fn]) => fn()));
+      const results = await Promise.allSettled(
+        requests.map((item) => item.request),
+      );
 
-      const get = (key) => {
-        const idx = entries.findIndex(([k]) => k === key);
-        const r = results[idx];
-        return r?.status === "fulfilled" ? r.value : undefined;
-      };
+      results.forEach((result, index) => {
+        const { key, label } = requests[index];
 
-      const s = get("summary");
-      if (s !== undefined) setKpis(s);
+        if (result.status === "rejected") {
+          console.error(`[Dashboard] ${key} failed`, result.reason);
+          toast.error(
+            `${label}: ${getApiErrorMessage(result.reason) || "خطا"}`,
+          );
+          return;
+        }
 
-      const tp = get("topPayers");
-      if (tp !== undefined) setTopPayers(tp || []);
+        const data = result.value;
 
-      const tr = get("topReceivers");
-      if (tr !== undefined) setTopReceivers(tr || []);
+        if (key === "summary") {
+          setKpis(data);
+        }
 
-      const lr = get("lastRefresh");
-      if (lr !== undefined) setLastRefresh(lr);
+        if (key === "lastRefresh") {
+          setLastRefresh(data);
+        }
 
-      const ps = get("personsSummary");
-      if (ps !== undefined) setPersonsSummary(ps || []);
+        if (key === "persons") {
+          setPersonsSummary(data || []);
+        }
 
-      const ict = get("itemCategoriesTree");
-      if (ict !== undefined) {
-        setItemCategoriesTree(ict || []);
-        // default: expand root nodes once
-        setExpandedCats((prev) => {
-          if (prev && prev.size > 0) return prev;
-          const next = new Set();
-          (ict || []).forEach((r) => {
-            const parentId =
-              r.parentItemCategoryId ?? r.parent_item_category_id;
-            if (!parentId) {
-              const id = r.itemCategoryId ?? r.item_category_id;
-              next.add(id);
-            }
-          });
-          return next;
-        });
-      }
+        if (key === "projects") {
+          setProjectsSummary(data || []);
+        }
 
-      const dap = get("debtAgingPersons");
-      if (dap !== undefined) setDebtAgingPersons(dap || []);
+        if (key === "categories") {
+          setCategoriesSummary(data || []);
+        }
 
-      const odc = get("openDebtsCoverage");
-      if (odc !== undefined) setOpenDebtsCoverage(odc || []);
+        if (key === "unallocated") {
+          setOpenDebts(
+            data?.openDebts ??
+              data?.open_debts ??
+              [],
+          );
 
-      const uo = get("unallocatedOverview");
-      if (uo !== undefined) {
-        setUnallocatedOpenDebts(uo?.openDebts || uo?.open_debts || []);
-        setUnallocatedExpenseTxs(
-          uo?.unallocatedExpenses || uo?.unallocated_expenses || [],
-        );
-      }
-
-      const ra = get("recentActivities");
-      if (ra !== undefined) setRecentActivities(ra || []);
-
-      const ek = get("executiveKpis");
-      if (ek !== undefined) setExecKpis(ek);
-
-      // show failures with real reason
-      results.forEach((r, i) => {
-        if (r.status === "rejected") {
-          const key = entries[i][0];
-          console.error(`[Dashboard] ${key} failed:`, r.reason);
-          toast.error(`${key}: ${getApiErrorMessage(r.reason) || "خطا"}`);
+          setOpenExpenses(
+            data?.unallocatedExpenses ??
+              data?.unallocated_expenses ??
+              [],
+          );
         }
       });
     } finally {
@@ -415,107 +286,109 @@ export default function DashboardPage() {
 
   async function onRefreshMart() {
     setRefreshing(true);
+
     try {
-      const res = await refreshDashboardMart();
-      setLastRefresh(res);
-      toast.success("به‌روزرسانی داشبورد انجام شد");
+      const result = await refreshDashboardMart();
+      setLastRefresh(result);
+
+      toast.success("به‌روزرسانی انبار داده انجام شد");
+
       await loadAll();
-    } catch (e) {
-      toast.error(getApiErrorMessage(e) || "خطا");
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(error) || "خطا در به‌روزرسانی انبار داده",
+      );
     } finally {
       setRefreshing(false);
     }
   }
 
-  async function openPersonPayables(p) {
-    setSelectedPerson({ personId: p.personId, displayName: p.displayName });
+  async function openPersonPayables(person) {
+    const personId = person.personId ?? person.person_id;
+    const displayName =
+      person.displayName ?? person.display_name ?? "شخص";
+
+    setSelectedPerson({ personId, displayName });
     setPersonPayables([]);
     setPayablesLoading(true);
+
     try {
       const rows = await getPersonPayables({
-        personId: p.personId,
+        personId,
         from,
         to,
         limit: 100,
       });
+
       setPersonPayables(rows || []);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e) || "خطا");
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(error) || "خطا در دریافت بدهی‌های شخص",
+      );
     } finally {
       setPayablesLoading(false);
     }
   }
 
-  async function onDownloadPersonExcel(e, p) {
-  e.stopPropagation();
+  async function onDownloadPersonExcel(event, person) {
+    event.stopPropagation();
 
-  try {
-    await downloadPersonOperationsExcel({
-      personId: p.personId,
-      displayName: p.displayName,
-      from,
-      to,
-    });
+    const personId = person.personId ?? person.person_id;
+    const displayName =
+      person.displayName ?? person.display_name ?? "شخص";
 
-    toast.success("فایل اکسل ساخته شد");
-  } catch (err) {
-    console.error(err);
-    toast.error(getApiErrorMessage(err) || "خطا در ساخت فایل اکسل");
-  }
-}
+    setDownloadingPersonId(personId);
 
-  async function openItemCategoryDrill(c) {
-    const id = c.itemCategoryId ?? c.item_category_id;
-    const title = c.title ?? "-";
-
-    setSelectedItemCategory({
-      itemCategoryId: id,
-      title,
-    });
-    setItemsByCategory([]);
-    setItemsByCategoryLoading(true);
     try {
-      const rows = await getItemsByCategory({
-        itemCategoryId: id,
+      await downloadPersonOperationsExcel({
+        personId,
+        displayName,
         from,
         to,
-        limit: 150,
       });
-      setItemsByCategory(rows || []);
-    } catch (e) {
-      toast.error(getApiErrorMessage(e) || "خطا");
+
+      toast.success("فایل اکسل ساخته شد");
+    } catch (error) {
+      toast.error(
+        getApiErrorMessage(error) || "خطا در ساخت فایل اکسل",
+      );
     } finally {
-      setItemsByCategoryLoading(false);
+      setDownloadingPersonId(null);
     }
   }
 
   useEffect(() => {
     loadAll();
+
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const refreshedAt =
+    lastRefresh?.refreshedAt ??
+    lastRefresh?.refreshed_at ??
+    "-";
+
   return (
-    <div className="p-4 space-y-4">
-      {/* Header */}
+    <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="text-lg font-bold">داشبورد</div>
+
           <div className="text-xs text-zinc-500">
-            {lastRefresh?.refreshedAt
-              ? `آخرین بروزرسانی: ${lastRefresh.refreshedAt}`
-              : "آخرین بروزرسانی: -"}
+            آخرین بروزرسانی: {refreshedAt}
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2 items-center">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-500">از</span>
+
             <DatePicker
               calendar={persian}
               locale={persian_fa}
               value={fromPersian}
-              onChange={(d) => {
-                const iso = persianDateObjectToIso(d);
+              onChange={(value) => {
+                const iso = persianDateObjectToIso(value);
                 if (iso) setFrom(iso);
               }}
               inputClass="border rounded-lg px-3 py-2 text-sm w-[150px]"
@@ -525,12 +398,13 @@ export default function DashboardPage() {
 
           <div className="flex items-center gap-2">
             <span className="text-xs text-zinc-500">تا</span>
+
             <DatePicker
               calendar={persian}
               locale={persian_fa}
               value={toPersian}
-              onChange={(d) => {
-                const iso = persianDateObjectToIso(d);
+              onChange={(value) => {
+                const iso = persianDateObjectToIso(value);
                 if (iso) setTo(iso);
               }}
               inputClass="border rounded-lg px-3 py-2 text-sm w-[150px]"
@@ -539,582 +413,559 @@ export default function DashboardPage() {
           </div>
 
           <button
-            className="px-4 py-2 rounded-lg border text-sm hover:bg-zinc-50 disabled:opacity-50"
+            type="button"
+            className="rounded-lg border px-4 py-2 text-sm hover:bg-zinc-50 disabled:opacity-50"
             onClick={loadAll}
             disabled={loading}
           >
-            اعمال
+            {loading ? "در حال دریافت..." : "اعمال"}
           </button>
 
           <button
-            className="px-4 py-2 rounded-lg bg-black text-white text-sm hover:bg-black/90 disabled:opacity-50"
+            type="button"
+            className="rounded-lg bg-black px-4 py-2 text-sm text-white hover:bg-black/90 disabled:opacity-50"
             onClick={onRefreshMart}
             disabled={refreshing}
           >
-            {refreshing ? "در حال بروزرسانی..." : "بروزرسانی Mart"}
+            {refreshing ? "در حال بروزرسانی..." : "بروزرسانی انبار داده"}
           </button>
         </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <Card title="جمع بدهی‌ها (DEBTS)">
-          <div className="text-2xl font-bold">
-            {formatNumber(kpis?.totalDebtAmount ?? kpis?.total_debt_amount)}
-          </div>
-          <div className="text-xs text-zinc-500 mt-1">
-            بازه تاریخ انتخاب‌ شده
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <Card title="جمع بدهی‌ها">
+          <button
+            type="button"
+            className="text-2xl font-bold text-blue-600 hover:underline"
+            onClick={() => openInNewTab("/debts")}
+            title="نمایش بدهی‌ها"
+          >
+            {formatNumber(
+              kpis?.totalDebtAmount ??
+                kpis?.total_debt_amount,
+            )}
+          </button>
+
+          <div className="mt-1 text-xs text-zinc-500">
+            بدهی‌های ثبت‌شده در بازه انتخاب‌شده
           </div>
         </Card>
 
-        <Card title="جمع پرداخت‌ها (PAYMENTS)">
-          <div className="text-2xl font-bold">
+        <Card title="جمع هزینه‌ها">
+          <button
+            type="button"
+            className="text-2xl font-bold text-blue-600 hover:underline"
+            onClick={() =>
+              openInNewTab(
+                `/transactions?transactionType=EXP` +
+                  `&from=${from}&to=${to}` +
+                  `&cf_transactionType=${encodeURIComponent("هزینه")}`,
+              )
+            }
+            title="نمایش هزینه‌ها"
+          >
             {formatNumber(
-              kpis?.totalTransactionsAmount ?? kpis?.total_transactions_amount,
+              kpis?.totalTransactionsAmount ??
+                kpis?.total_transactions_amount,
             )}
-          </div>
-          <div className="text-xs text-zinc-500 mt-1">
-            بازه تاریخ انتخاب‌شده
+          </button>
+
+          <div className="mt-1 text-xs text-zinc-500">
+            تعداد هزینه‌ها:{" "}
+            {formatNumber(
+              kpis?.transactionsCount ??
+                kpis?.transactions_count,
+            )}
           </div>
         </Card>
-      
       </div>
 
-      {/* Executive totals (2 cards) */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <div className="bg-white border rounded-2xl shadow-sm p-4">
-          <div className="text-xs text-zinc-500">جمع هزینه‌ها (EXP)</div>
-          <div className="text-2xl font-bold mt-1">
-            {formatNumber(
-              execKpis?.totalExpenseAmount ?? execKpis?.total_expense_amount,
-            )}
-          </div>
-          <div className="text-[11px] text-zinc-500 mt-1">
-            شامل پرداخت‌هایی که از نوع هزینه ثبت شده‌اند.
-          </div>
-        </div>
-
-        <div className="bg-white border rounded-2xl shadow-sm p-4">
-          <div className="text-xs text-zinc-500">جمع تنخواه (TRN)</div>
-          <div className="text-2xl font-bold mt-1">
-            {formatNumber(
-              execKpis?.totalTankhahAmount ?? execKpis?.total_tankhah_amount,
-            )}
-          </div>
-          <div className="text-[11px] text-zinc-500 mt-1">
-            تنخواه الزاماً نیاز به تخصیص ندارد.
-          </div>
-        </div>
-      </div>
-
-      {/* Pies */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <PieCard title="بیشترین پرداخت‌کنندگان" rows={topPayers} />
-        <PieCard title="بیشترین دریافت‌کنندگان" rows={topReceivers} />
-      </div>
-
-      {/* Item Categories drill (TREE + INLINE ITEMS) */}
-      <MiniTable
-        title="دسته‌بندی‌های کالا/خدمات (Drill)"
-        subtitle="درخت را باز/بسته کنید؛ روی دسته کلیک کنید تا آیتم‌های آن (و زیرمجموعه‌ها) نمایش داده شود"
+      <Section
+        title="خلاصه اشخاص"
+        subtitle="مانده = بدهی پروژه به شخص + هزینه‌های شخص + پرداخت به اشخاص − مبلغ دریافتی شخص"
       >
-        {itemCategoriesTree.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <input
+            type="text"
+            value={personFilter}
+            onChange={(event) => setPersonFilter(event.target.value)}
+            placeholder="فیلتر بر اساس نام شخص..."
+            className="w-full rounded-lg border px-3 py-2 text-sm md:w-80"
+          />
+
+          <div className="text-xs text-zinc-500">
+            {formatNumber(filteredPersons.length)} شخص
+          </div>
+        </div>
+
+        {filteredPersons.length === 0 ? (
+          <EmptyState />
         ) : (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
-            {/* Left: Tree */}
-            <div className="border rounded-xl p-3">
-              <div className="text-sm font-semibold mb-2">درخت دسته‌بندی</div>
+          <div className="max-h-[440px] overflow-auto rounded-xl border">
+            <table className="min-w-[1200px] w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-zinc-50 shadow-sm">
+                <tr className="text-xs text-zinc-600">
+                  <th className="px-3 py-3 text-right">شخص</th>
+                  <th className="px-3 py-3 text-left">
+                    بدهی پروژه به شخص
+                  </th>
+                  <th className="px-3 py-3 text-left">هزینه‌ها</th>
+                  <th className="px-3 py-3 text-left">پرداخت به اشخاص</th>
+                  <th className="px-3 py-3 text-left">مبلغ دریافتی</th>
+                  <th className="px-3 py-3 text-left">مانده</th>
+                  <th className="px-3 py-3 text-center">خروجی</th>
+                </tr>
+              </thead>
 
-              <div className="max-h-[420px] overflow-auto">
-                {(() => {
-                  const roots = buildCategoryTree(itemCategoriesTree);
+              <tbody>
+                {filteredPersons.map((person) => {
+                  const personId =
+                    person.personId ?? person.person_id;
 
-                  const Row = ({ node, depth }) => {
-                    const id = node.id;
-                    const hasChildren = (node.children?.length || 0) > 0;
-                    const isOpen = expandedCats.has(id);
+                  const displayName =
+                    person.displayName ??
+                    person.display_name ??
+                    "—";
 
-                    const amount =
-                      node.amount ?? node.totalDebt ?? node.total_debt;
-                    const allocatedAmount =
-                      node.allocatedAmount ??
-                      node.allocated_amount ??
-                      node.totalAllocated ??
-                      node.total_allocated;
-                    const remaining =
-                      node.remaining ?? node.remain ?? node.remained;
+                  const totalDebt =
+                    person.totalDebt ??
+                    person.total_debt;
+
+                  const totalExpense =
+                    person.totalExpense ??
+                    person.total_expense;
+
+                  const totalPersonPayment =
+                    person.totalPersonPayment ??
+                    person.total_person_payment;
+
+                  const totalReceived =
+                    person.totalReceived ??
+                    person.total_received;
+
+                  return (
+                    <tr
+                      key={personId}
+                      className="cursor-pointer border-t transition hover:bg-zinc-50"
+                      onClick={() => openPersonPayables(person)}
+                      title="نمایش بدهی‌های قابل پرداخت شخص"
+                    >
+                      <td className="px-3 py-3 text-right">
+                        {displayName}
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono">
+                        <button
+                          type="button"
+                          className="font-semibold text-blue-600 hover:underline"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openInNewTab(`/debts?pid=${personId}`);
+                          }}
+                          title="نمایش بدهی‌های شخص"
+                        >
+                          {formatNumber(totalDebt)}
+                        </button>
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono">
+                        <button
+                          type="button"
+                          className="font-semibold text-blue-600 hover:underline"
+                          onClick={(event) => {
+                            event.stopPropagation();
+
+                            openInNewTab(
+                              `/transactions?fromPid=${personId}` +
+                                `&transactionType=EXP` +
+                                `&from=${from}&to=${to}` +
+                                `&cf_transactionType=${encodeURIComponent("هزینه")}`,
+                            );
+                          }}
+                          title="نمایش هزینه‌های شخص"
+                        >
+                          {formatNumber(totalExpense)}
+                        </button>
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono">
+                        <button
+                          type="button"
+                          className="font-semibold text-blue-600 hover:underline"
+                          onClick={(event) => {
+                            event.stopPropagation();
+
+                            openInNewTab(
+                              `/transactions?fromPid=${personId}` +
+                                `&transactionType=TRN` +
+                                `&from=${from}&to=${to}` +
+                                `&cf_transactionType=${encodeURIComponent(
+                                  "تراکنش",
+                                )}`,
+                            );
+                          }}
+                          title="نمایش پرداخت‌های این شخص به اشخاص دیگر"
+                        >
+                          {formatNumber(totalPersonPayment)}
+                        </button>
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono">
+                        <button
+                          type="button"
+                          className="font-semibold text-blue-600 hover:underline"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openInNewTab(
+                              `/transactions?toPid=${personId}` +
+                                `&from=${from}&to=${to}`,
+                            );
+                          }}
+                          title="نمایش مبالغ دریافتی شخص"
+                        >
+                          {formatNumber(totalReceived)}
+                        </button>
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono font-semibold">
+                        {formatNumber(person.remain)}
+                      </td>
+
+                      <td className="px-3 py-3 text-center">
+                        <button
+                          type="button"
+                          className="rounded-lg border border-emerald-600 px-3 py-1 text-xs text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                          onClick={(event) =>
+                            onDownloadPersonExcel(event, person)
+                          }
+                          disabled={downloadingPersonId === personId}
+                        >
+                          {downloadingPersonId === personId
+                            ? "در حال ساخت..."
+                            : "Excel"}
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </Section>
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <Section
+  title="خلاصه هزینه‌های پروژه"
+  subtitle="هزینه‌ها بر اساس پروژه‌های برگ و با مسیر کامل نمایش داده می‌شوند"
+>
+  {projectsSummary.length === 0 ? (
+    <EmptyState />
+  ) : (
+    <div className="max-h-[400px] overflow-auto rounded-xl border">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-zinc-50">
+          <tr className="text-xs text-zinc-600">
+            <th className="px-3 py-3 text-right">مسیر پروژه</th>
+            <th className="px-3 py-3 text-left">جمع هزینه</th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {projectsSummary.map((project) => {
+            const projectId =
+              project.projectId ?? project.project_id;
+
+            const projectTitle =
+              project.projectTitle ??
+              project.project_title ??
+              "—";
+
+            const totalExpense =
+              project.totalExpense ??
+              project.total_expense;
+
+            return (
+              <tr key={projectId} className="border-t">
+                <td className="px-3 py-3 text-right">
+                  {projectTitle}
+                </td>
+
+                <td className="px-3 py-3 text-left font-mono">
+                  <button
+                    type="button"
+                    className="font-semibold text-blue-600 hover:underline"
+                    onClick={() =>
+                      openInNewTab(
+                        `/transactions?projectId=${projectId}` +
+                          `&transactionType=EXP` +
+                          `&from=${from}&to=${to}` +
+                          `&cf_transactionType=${encodeURIComponent(
+                            "هزینه",
+                          )}`,
+                      )
+                    }
+                    title="نمایش هزینه‌های این پروژه"
+                  >
+                    {formatNumber(totalExpense)}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  )}
+</Section>
+
+<Section
+  title="خلاصه هزینه‌های دسته‌بندی"
+  subtitle="هزینه‌ها بر اساس دسته‌بندی‌های برگ و با مسیر کامل نمایش داده می‌شوند"
+>
+  {categoriesSummary.length === 0 ? (
+    <EmptyState />
+  ) : (
+    <div className="max-h-[400px] overflow-auto rounded-xl border">
+      <table className="w-full text-sm">
+        <thead className="sticky top-0 z-10 bg-zinc-50">
+          <tr className="text-xs text-zinc-600">
+            <th className="px-3 py-3 text-right">
+              مسیر دسته‌بندی
+            </th>
+            <th className="px-3 py-3 text-left">
+              جمع هزینه
+            </th>
+          </tr>
+        </thead>
+
+        <tbody>
+          {categoriesSummary.map((category) => {
+            const categoryId =
+              category.itemCategoryId ??
+              category.item_category_id;
+
+            const categoryTitle =
+              category.title ?? "—";
+
+            const totalExpense =
+              category.totalExpense ??
+              category.total_expense;
+
+            return (
+              <tr key={categoryId} className="border-t">
+                <td className="px-3 py-3 text-right">
+                  {categoryTitle}
+                </td>
+
+                <td className="px-3 py-3 text-left font-mono">
+                  <button
+                    type="button"
+                    className="font-semibold text-blue-600 hover:underline"
+                    onClick={() =>
+                      openInNewTab(
+                        `/transactions?categoryId=${categoryId}` +
+                          `&transactionType=EXP` +
+                          `&from=${from}&to=${to}` +
+                          `&cf_transactionType=${encodeURIComponent(
+                            "هزینه",
+                          )}`,
+                      )
+                    }
+                    title="نمایش هزینه‌های این دسته‌بندی"
+                  >
+                    {formatNumber(totalExpense)}
+                  </button>
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  )}
+</Section>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 xl:grid-cols-2">
+        <Section
+          title="هزینه‌های باز"
+          subtitle="هزینه‌هایی که هنوز به‌طور کامل تخصیص داده نشده‌اند"
+        >
+          {openExpenses.length === 0 ? (
+            <EmptyState />
+          ) : (
+            <div className="max-h-[430px] overflow-auto rounded-xl border">
+              <table className="min-w-[850px] w-full text-sm">
+                <thead className="sticky top-0 z-10 bg-zinc-50">
+                  <tr className="text-xs text-zinc-600">
+                    <th className="px-3 py-3 text-right">شناسه</th>
+                    <th className="px-3 py-3 text-right">تاریخ</th>
+                    <th className="px-3 py-3 text-right">از شخص</th>
+                    <th className="px-3 py-3 text-right">به شخص</th>
+                    <th className="px-3 py-3 text-left">مبلغ</th>
+                    <th className="px-3 py-3 text-left">تخصیص</th>
+                    <th className="px-3 py-3 text-left">مانده</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {openExpenses.map((expense) => {
+                    const transactionId =
+                      expense.transactionId ??
+                      expense.transaction_id;
 
                     return (
-                      <div>
-                        <div
-                          className={`flex items-center gap-2 py-1 px-2 rounded-lg hover:bg-zinc-50 cursor-pointer ${
-                            selectedItemCategory?.itemCategoryId === id
-                              ? "bg-zinc-100"
-                              : ""
-                          }`}
-                          style={{ paddingRight: 8 + depth * 18 }}
-                          onClick={() =>
-                            openItemCategoryDrill({
-                              itemCategoryId: id,
-                              title: node.title,
-                            })
-                          }
-                        >
+                      <tr key={transactionId} className="border-t">
+                        <td className="px-3 py-3 text-right">
                           <button
                             type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (!hasChildren) return;
-                              setExpandedCats((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(id)) next.delete(id);
-                                else next.add(id);
-                                return next;
-                              });
-                            }}
-                            className={`w-6 h-6 flex items-center justify-center rounded-md border bg-white hover:bg-zinc-50 ${
-                              hasChildren ? "" : "opacity-40 cursor-default"
-                            }`}
-                            title={
-                              hasChildren
-                                ? isOpen
-                                  ? "بستن"
-                                  : "باز کردن"
-                                : "بدون زیرمجموعه"
+                            className="font-semibold text-blue-600 hover:underline"
+                            onClick={() =>
+                              openInNewTab(
+                                `/transactions/${transactionId}/allocations`,
+                              )
                             }
+                            title="نمایش و تخصیص هزینه"
                           >
-                            {hasChildren ? (isOpen ? "▾" : "▸") : "•"}
+                            {transactionId}
                           </button>
+                        </td>
 
-                          <div className="min-w-0 flex-1">
-                            <div className="text-sm truncate">{node.title}</div>
-                            <div className="text-[11px] text-zinc-500 font-mono mt-0.5">
-                              بدهی: {formatNumber(amount)} | تخصیص:{" "}
-                              {formatNumber(allocatedAmount)} | مانده:{" "}
-                              {formatNumber(remaining)}
-                            </div>
-                          </div>
-                        </div>
+                        <td className="px-3 py-3 text-right">
+                          {expense.txDate ??
+                            expense.tx_date ??
+                            "—"}
+                        </td>
 
-                        {hasChildren && isOpen ? (
-                          <div>
-                            {node.children.map((ch) => (
-                              <Row key={ch.id} node={ch} depth={depth + 1} />
-                            ))}
-                          </div>
-                        ) : null}
-                      </div>
-                    );
-                  };
+                        <td className="px-3 py-3 text-right">
+                          {expense.fromPersonName ??
+                            expense.from_person_name ??
+                            "—"}
+                        </td>
 
-                  return roots.map((r) => (
-                    <Row key={r.id} node={r} depth={0} />
-                  ));
-                })()}
-              </div>
-            </div>
+                        <td className="px-3 py-3 text-right">
+                          {expense.toPersonName ??
+                            expense.to_person_name ??
+                            "—"}
+                        </td>
 
-            {/* Right: Items list (category + descendants) */}
-            <div className="border rounded-xl p-3">
-              <div className="flex items-center justify-between gap-2 mb-2">
-                <div>
-                  <div className="text-sm font-semibold">آیتم‌ها</div>
-                  <div className="text-[11px] text-zinc-500">
-                    {selectedItemCategory?.title
-                      ? `دسته انتخاب‌شده: ${selectedItemCategory.title} (شامل زیرمجموعه‌ها)`
-                      : "برای نمایش، یک دسته را از درخت انتخاب کنید"}
-                  </div>
-                </div>
+                        <td className="px-3 py-3 text-left font-mono">
+                          {formatNumber(expense.amount)}
+                        </td>
 
-                {selectedItemCategory ? (
-                  <button
-                    className="px-3 py-1 text-xs rounded-lg border hover:bg-zinc-50"
-                    onClick={() => {
-                      setSelectedItemCategory(null);
-                      setItemsByCategory([]);
-                    }}
-                  >
-                    پاک کردن انتخاب
-                  </button>
-                ) : null}
-              </div>
+                        <td className="px-3 py-3 text-left font-mono">
+                          {formatNumber(
+                            expense.allocatedAmount ??
+                              expense.allocated_amount,
+                          )}
+                        </td>
 
-              {itemsByCategoryLoading ? (
-                <div className="text-xs text-zinc-500">در حال دریافت...</div>
-              ) : !selectedItemCategory ? (
-                <div className="text-xs text-zinc-500">
-                  یک دسته را انتخاب کنید.
-                </div>
-              ) : itemsByCategory.length === 0 ? (
-                <div className="text-xs text-zinc-500">آیتمی یافت نشد</div>
-              ) : (
-                <div className="overflow-auto">
-                  <table className="min-w-[900px] w-full text-sm">
-                    <thead>
-                      <tr className="text-xs text-zinc-600 border-b">
-                        <th className="text-right py-2">آیتم</th>
-                        <th className="text-left py-2">جمع بدهی</th>
-                        <th className="text-left py-2">پرداخت/تخصیص</th>
-                        <th className="text-left py-2">مانده</th>
+                        <td className="px-3 py-3 text-left font-mono font-semibold">
+                          {formatNumber(expense.remaining)}
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody>
-                      {itemsByCategory.map((it, idx) => (
-                        <tr
-                          key={`${it.itemId ?? it.item_id ?? idx}`}
-                          className="border-b"
-                        >
-                          <td className="py-2 text-right">{it.title}</td>
-                          <td className="py-2 text-left">
-                            <button
-                              type="button"
-                              className="font-mono text-blue-600 hover:underline disabled:opacity-50 disabled:no-underline"
-                              onClick={() => openDebtsByItemInNewTab(it)}
-                              disabled={!Number(it?.amount)}
-                              title="نمایش بدهی‌های این آیتم"
-                            >
-                              {formatNumber(it.amount)}
-                            </button>
-                          </td>
-
-                          <td className="py-2 text-left font-mono">
-                            {formatNumber(it.allocatedAmount)}
-                          </td>
-                          <td className="py-2 text-left font-mono">
-                            {formatNumber(it.remaining)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </MiniTable>
-
-      {/* Persons drill */}
-      <MiniTable
-        title="اشخاص"
-        subtitle="کلیک روی شخص برای دیدن بدهی‌های قابل پرداخت"
-      >
-        {personsSummary.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[1100px] w-full text-sm">
-              <thead>
-                <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">شخص</th>
-                  <th className="text-left py-2">جمع بدهی</th>
-                  <th className="text-left py-2">جمع پرداختی</th>
-                  <th className="text-left py-2">جمع دریافتی</th>
-                  <th className="text-left py-2">مانده</th>
-                  <th className="text-center py-2">خروجی</th>
-                </tr>
-              </thead>
-              <tbody>
-                {personsSummary.map((p) => (
-                  <tr
-                    key={p.personId}
-                    className="border-b hover:bg-zinc-50 cursor-pointer transition"
-                    onClick={() => openPersonPayables(p)}
-                    title="کلیک برای Drill"
-                  >
-                    <td className="py-2 text-right">{p.displayName}</td>
-                    <td
-                      className="py-2 text-left font-mono text-blue-600 underline cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation(); // ⛔ نذار row click اجرا بشه
-                        openInNewTab(`/debts?pid=${p.personId}`);
-                      }}
-                      title="نمایش بدهی‌های این شخص"
-                    >
-                      {formatNumber(p.totalDebt)}
-                    </td>
-
-                    <td
-                      className="py-2 text-left font-mono text-blue-600 underline cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation(); // ⛔ نذار click ردیف اجرا بشه
-                        window.open(
-                          `/transactions?fromPid=${encodeURIComponent(p.personId)}`,
-                          "_blank",
-                          "noopener,noreferrer",
-                        );
-                      }}
-                      title="نمایش تراکنش‌های پرداختی این شخص"
-                    >
-                      {formatNumber(p.totalPaid)}
-                    </td>
-
-                    <td
-                      className="py-2 text-left font-mono text-blue-600 underline cursor-pointer"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        openInNewTab(`/transactions?toPid=${p.personId}`);
-                      }}
-                      title="نمایش تراکنش‌های دریافتی"
-                    >
-                      {formatNumber(p.totalReceived)}
-                    </td>
-
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(p.remain)}
-                    </td>
-
-                    <td className="py-2 text-center">
-                      <button
-                        type="button"
-                        className="px-3 py-1 text-xs rounded-lg border border-emerald-600 text-emerald-700 hover:bg-emerald-50"
-                        onClick={(e) => onDownloadPersonExcel(e, p)}
-                        title="دانلود گزارش عملیات شخص"
-                      >
-                        Excel
-                      </button>
-                    </td>
-
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </MiniTable>
-
-      {/* Debt Aging (simplified) */}
-      <MiniTable
-        title="گزارش سررسید بدهی‌ها (اشخاص)"
-        subtitle="فقط جمع مانده بدهی‌های باز (ستون‌های بازه حذف شدند)"
-      >
-        {debtAgingPersons.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead>
-                <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">شخص</th>
-                  <th className="text-left py-2">جمع مانده</th>
-                </tr>
-              </thead>
-              <tbody>
-                {debtAgingPersons.map((r) => (
-                  <tr key={r.person_id ?? r.personId} className="border-b">
-                    <td className="py-2 text-right">
-                      {r.display_name ?? r.displayName}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.open_total ?? r.openTotal)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </MiniTable>
-
-      {/* Open Debts vs Covered */}
-      <MiniTable
-        title="بدهی‌های باز / میزان پوشش"
-        subtitle="نمایش بدهی‌هایی که هنوز مانده دارند (بازه تاریخ انتخاب‌شده)"
-      >
-        {openDebtsCoverage.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[1200px] w-full text-sm">
-              <thead>
-                <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">ID</th>
-                  <th className="text-right py-2">تاریخ</th>
-                  <th className="text-right py-2">شخص</th>
-                  <th className="text-right py-2">پروژه</th>
-                  <th className="text-left py-2">جمع بدهی</th>
-                  <th className="text-left py-2">جمع پوشش</th>
-                  <th className="text-left py-2">مانده</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openDebtsCoverage.map((r, idx) => (
-                  <tr
-                    key={`${r.debt_id ?? r.debtId ?? idx}`}
-                    className="border-b"
-                  >
-                    <td className="py-2 text-right">{r.debt_id ?? r.debtId}</td>
-                    <td className="py-2 text-right">
-                      {r.debt_date ?? r.debtDate}
-                    </td>
-                    <td className="py-2 text-right">
-                      {r.person_name ?? r.personName}
-                    </td>
-                    <td className="py-2 text-right">
-                      {r.project_title ?? r.projectTitle}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.total_debt ?? r.totalDebt)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.allocated_amount ?? r.allocatedAmount)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.remaining)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </MiniTable>
-
-      {/* Unallocated Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-        <MiniTable title="بدهی‌های باز بدون تخصیص" subtitle="Top 50">
-          {unallocatedOpenDebts.length === 0 ? (
-            <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-          ) : (
-            <div className="overflow-auto">
-              <table className="min-w-[900px] w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-zinc-600 border-b">
-                    <th className="text-right py-2">ID</th>
-                    <th className="text-right py-2">تاریخ</th>
-                    <th className="text-right py-2">شخص</th>
-                    <th className="text-right py-2">پروژه</th>
-                    <th className="text-left py-2">جمع بدهی</th>
-                    <th className="text-left py-2">مانده</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {unallocatedOpenDebts.map((r, idx) => (
-                    <tr
-                      key={`${r.debt_id ?? r.debtId ?? idx}`}
-                      className="border-b"
-                    >
-                      <td className="py-2 text-right">
-                        {r.debt_id ?? r.debtId}
-                      </td>
-                      <td className="py-2 text-right">
-                        {r.debt_date ?? r.debtDate}
-                      </td>
-                      <td className="py-2 text-right">
-                        {r.person_name ?? r.personName}
-                      </td>
-                      <td className="py-2 text-right">
-                        {r.project_title ?? r.projectTitle}
-                      </td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(r.total_debt ?? r.totalDebt)}
-                      </td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(r.remaining)}
-                      </td>
-                    </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
-        </MiniTable>
+        </Section>
 
-        <MiniTable title="هزینه‌های بدون تخصیص" subtitle="Top 50">
-          {unallocatedExpenseTxs.length === 0 ? (
-            <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+        <Section
+          title="بدهی‌های باز"
+          subtitle="بدهی‌هایی که هنوز به‌طور کامل پوشش داده نشده‌اند"
+        >
+          {openDebts.length === 0 ? (
+            <EmptyState />
           ) : (
-            <div className="overflow-auto">
+            <div className="max-h-[430px] overflow-auto rounded-xl border">
               <table className="min-w-[900px] w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-zinc-600 border-b">
-                    <th className="text-right py-2">ID</th>
-                    <th className="text-right py-2">تاریخ</th>
-                    <th className="text-right py-2">شخص</th>
-                    {/* <th className="text-right py-2">پروژه</th> */}
-                    <th className="text-left py-2">مبلغ</th>
-                    <th className="text-left py-2">تخصیص</th>
-                    <th className="text-left py-2">مانده</th>
+                <thead className="sticky top-0 z-10 bg-zinc-50">
+                  <tr className="text-xs text-zinc-600">
+                    <th className="px-3 py-3 text-right">شناسه</th>
+                    <th className="px-3 py-3 text-right">تاریخ</th>
+                    <th className="px-3 py-3 text-right">شخص</th>
+                    <th className="px-3 py-3 text-right">پروژه</th>
+                    <th className="px-3 py-3 text-left">بدهی</th>
+                    <th className="px-3 py-3 text-left">پوشش</th>
+                    <th className="px-3 py-3 text-left">مانده</th>
                   </tr>
                 </thead>
+
                 <tbody>
-                  {unallocatedExpenseTxs.map((r, idx) => (
-                    <tr
-                      key={`${r.transaction_id ?? r.transactionId ?? idx}`}
-                      className="border-b"
-                    >
-                      <td className="py-2 text-right">
-                        {r.transaction_id ?? r.transactionId}
-                      </td>
-                      <td className="py-2 text-right">
-                        {r.tx_date ?? r.txDate}
-                      </td>
-                      <td className="py-2 text-right">
-                        {r.to_person_name ?? r.toPersonName}
-                      </td>
-                      {/*<td className="py-2 text-right">
-                        {r.project_title ?? r.projectTitle}
-                      </td> */}
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(r.amount)}
-                      </td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(r.allocated)}
-                      </td>
-                      <td className="py-2 text-left font-mono">
-                        {formatNumber(r.remaining)}
-                      </td>
-                    </tr>
-                  ))}
+                  {openDebts.map((debt) => {
+                    const debtId =
+                      debt.debtHeaderId ??
+                      debt.debt_header_id;
+
+                    return (
+                      <tr key={debtId} className="border-t">
+                        <td className="px-3 py-3 text-right">
+                          <button
+                            type="button"
+                            className="font-semibold text-blue-600 hover:underline"
+                            onClick={() =>
+                              openInNewTab(`/debts?sid=${debtId}`)
+                            }
+                            title="نمایش بدهی"
+                          >
+                            {debtId}
+                          </button>
+                        </td>
+
+                        <td className="px-3 py-3 text-right">
+                          {debt.debtDate ??
+                            debt.debt_date ??
+                            "—"}
+                        </td>
+
+                        <td className="px-3 py-3 text-right">
+                          {debt.personName ??
+                            debt.person_name ??
+                            "—"}
+                        </td>
+
+                        <td className="px-3 py-3 text-right">
+                          {debt.projectTitle ??
+                            debt.project_title ??
+                            "—"}
+                        </td>
+
+                        <td className="px-3 py-3 text-left font-mono">
+                          {formatNumber(
+                            debt.totalDebt ??
+                              debt.total_debt,
+                          )}
+                        </td>
+
+                        <td className="px-3 py-3 text-left font-mono">
+                          {formatNumber(
+                            debt.allocatedAmount ??
+                              debt.allocated_amount,
+                          )}
+                        </td>
+
+                        <td className="px-3 py-3 text-left font-mono font-semibold">
+                          {formatNumber(debt.remaining)}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
-        </MiniTable>
+        </Section>
       </div>
 
-      {/* Recent activities */}
-      {/*<MiniTable title="فعالیت‌های اخیر" subtitle="آخرین ۲۰ رویداد">
-        {recentActivities.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
-        ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[900px] w-full text-sm">
-              <thead>
-                <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">تاریخ</th>
-                  <th className="text-right py-2">نوع</th>
-                  <th className="text-right py-2">توضیح</th>
-                  <th className="text-left py-2">مبلغ</th>
-                </tr>
-              </thead>
-              <tbody>
-                {recentActivities.map((r, idx) => (
-                  <tr key={`${r.id ?? idx}`} className="border-b">
-                    <td className="py-2 text-right">
-                      {r.created_at ?? r.createdAt}
-                    </td>
-                    <td className="py-2 text-right">{r.type}</td>
-                    <td className="py-2 text-right">{r.description}</td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.amount)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </MiniTable>*/}
-
-      {/* Person Payables Modal */}
       <Modal
         open={!!selectedPerson}
         title={
           selectedPerson?.displayName
             ? `بدهی‌های قابل پرداخت: ${selectedPerson.displayName}`
-            : "بدهی‌ها"
+            : "بدهی‌های قابل پرداخت"
         }
         onClose={() => {
           setSelectedPerson(null);
@@ -1124,44 +975,75 @@ export default function DashboardPage() {
         {payablesLoading ? (
           <div className="text-xs text-zinc-500">در حال دریافت...</div>
         ) : personPayables.length === 0 ? (
-          <div className="text-xs text-zinc-500">داده‌ای وجود ندارد</div>
+          <EmptyState />
         ) : (
-          <div className="overflow-auto">
-            <table className="min-w-[1200px] w-full text-sm">
-              <thead>
-                <tr className="text-xs text-zinc-600 border-b">
-                  <th className="text-right py-2">ID</th>
-                  <th className="text-right py-2">تاریخ</th>
-                  <th className="text-right py-2">پروژه</th>
-                  <th className="text-left py-2">جمع بدهی</th>
-                  <th className="text-left py-2">پرداخت/تخصیص</th>
-                  <th className="text-left py-2">مانده</th>
+          <div className="max-h-[500px] overflow-auto rounded-xl border">
+            <table className="min-w-[850px] w-full text-sm">
+              <thead className="sticky top-0 z-10 bg-zinc-50">
+                <tr className="text-xs text-zinc-600">
+                  <th className="px-3 py-3 text-right">شناسه</th>
+                  <th className="px-3 py-3 text-right">تاریخ</th>
+                  <th className="px-3 py-3 text-right">پروژه</th>
+                  <th className="px-3 py-3 text-left">بدهی</th>
+                  <th className="px-3 py-3 text-left">تخصیص</th>
+                  <th className="px-3 py-3 text-left">مانده</th>
                 </tr>
               </thead>
+
               <tbody>
-                {personPayables.map((r, idx) => (
-                  <tr
-                    key={`${r.debtId ?? r.debt_id ?? idx}`}
-                    className="border-b"
-                  >
-                    <td className="py-2 text-right">{r.debtId ?? r.debt_id}</td>
-                    <td className="py-2 text-right">
-                      {r.debtDate ?? r.debt_date}
-                    </td>
-                    <td className="py-2 text-right">
-                      {r.projectTitle ?? r.project_title}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.totalDebt ?? r.total_debt)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.totalAllocated ?? r.total_allocated)}
-                    </td>
-                    <td className="py-2 text-left font-mono">
-                      {formatNumber(r.remaining)}
-                    </td>
-                  </tr>
-                ))}
+                {personPayables.map((debt) => {
+                  const debtId =
+                    debt.debtHeaderId ??
+                    debt.debt_header_id ??
+                    debt.debtId ??
+                    debt.debt_id;
+
+                  return (
+                    <tr key={debtId} className="border-t">
+                      <td className="px-3 py-3 text-right">
+                        <button
+                          type="button"
+                          className="font-semibold text-blue-600 hover:underline"
+                          onClick={() =>
+                            openInNewTab(`/debts?sid=${debtId}`)
+                          }
+                        >
+                          {debtId}
+                        </button>
+                      </td>
+
+                      <td className="px-3 py-3 text-right">
+                        {debt.debtDate ??
+                          debt.debt_date ??
+                          "—"}
+                      </td>
+
+                      <td className="px-3 py-3 text-right">
+                        {debt.projectTitle ??
+                          debt.project_title ??
+                          "—"}
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono">
+                        {formatNumber(
+                          debt.totalDebt ??
+                            debt.total_debt,
+                        )}
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono">
+                        {formatNumber(
+                          debt.allocatedAmount ??
+                            debt.allocated_amount,
+                        )}
+                      </td>
+
+                      <td className="px-3 py-3 text-left font-mono font-semibold">
+                        {formatNumber(debt.remaining)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

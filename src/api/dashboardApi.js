@@ -122,3 +122,15 @@ export async function downloadPersonOperationsExcel({
   a.remove();
   window.URL.revokeObjectURL(url);
 }
+
+export async function getUnallocatedOverview({
+  from,
+  to,
+  limit = 50,
+}) {
+  const res = await api.get("/api/v1/dashboard/unallocated", {
+    params: { from, to, limit },
+  });
+
+  return res.data;
+}
