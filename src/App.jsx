@@ -16,6 +16,9 @@ import DebtAllocationsPage from "./components/debts/DebtAllocationsPage";
 import TransactionAllocationsPage from "./components/transactions/TransactionAllocationsPage";
 import DocumentsPage from "./components/documents/DocumentsPage";
 
+import DocumentArchivesListPage from "./components/documentArchives/DocumentArchivesListPage";
+import DocumentArchiveFormPage from "./components/documentArchives/DocumentArchiveFormPage";
+
 import DashboardPage from "./pages/dashboard/DashboardPage";
 
 function AppLayout() {
@@ -45,6 +48,15 @@ export default function App() {
           <Route path="/debts" element={<DebtsMasterDetailPage />} />
           <Route path="/transactions" element={<TransactionsListPage />} />
 
+          <Route
+            path="/document-archives"
+            element={<DocumentArchivesListPage />}
+          />
+
+          <Route
+            path="/document-archives/:archiveId"
+            element={<DocumentArchiveFormPage />}
+          />
           <Route path="/debts/:debtId/allocations" element={<DebtAllocationsPage />} />
           <Route path="/transactions/:transactionId/allocations" element={<TransactionAllocationsPage />} />
           <Route path="/debts/:debtId/documents" element={<DocumentsPage ownerType="debt" />} />

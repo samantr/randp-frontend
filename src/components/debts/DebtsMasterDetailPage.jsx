@@ -156,6 +156,14 @@ function parseStateFromUrl(sp) {
       ? Number(pidRaw)
       : null;
 
+  const projectIdRaw = sp.get("projectId");
+  const projectId =
+    projectIdRaw != null &&
+    projectIdRaw !== "" &&
+    Number.isFinite(Number(projectIdRaw))
+      ? Number(projectIdRaw)
+      : null;
+
   const sortBy = sp.get("sb") || null;
   const sortDir = sp.get("sd") === "desc" ? "desc" : "asc";
 
@@ -174,11 +182,11 @@ function parseStateFromUrl(sp) {
   const hf = { ...EMPTY_HF };
   for (const k of HF_KEYS) hf[k] = sp.get(`hf_${k}`) ?? "";
 
-  return { pi, sortBy, sortDir, sid, itemId, pid, hf };
+  return { pi, sortBy, sortDir, sid, itemId, pid, projectId, hf };
 }
 
 
-function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, pid, hf }) {
+function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, pid, projectId, hf }) {
   const obj = {};
   obj.pi = String(pi ?? 0);
 
@@ -190,6 +198,9 @@ function buildUrlParams({ pi, sortBy, sortDir, sid, itemId, pid, hf }) {
 
   // ✅ keep pid in URL
   if (pid != null && pid !== "") obj.pid = String(pid);
+  if (projectId != null && projectId !== "") {
+    obj.projectId = String(projectId);
+  }
 
   for (const k of HF_KEYS) {
     const v = hf?.[k];
@@ -268,6 +279,9 @@ export default function DebtsMasterDetailPage() {
 
   // exact person filter (URL param: pid)
 const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
+  const [projectIdFilter, setProjectIdFilter] = useState(
+    initial.projectId ?? null,
+  );
 
   // detail
   const [loadingDetail, setLoadingDetail] = useState(false);
@@ -330,6 +344,7 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
     setHf(parsed.hf);
     setItemId(parsed.itemId ?? null);
     setPersonIdFilter(parsed.pid ?? null);
+    setProjectIdFilter(parsed.projectId ?? null);
 
 
     if (parsed.sid != null) setSelectedDebtId(parsed.sid);
@@ -354,6 +369,7 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
         sid: selectedDebtId,
         itemId,
         pid: personIdFilter,
+        projectId: projectIdFilter,
         hf,
       });
 
@@ -384,6 +400,7 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
     selectedDebtId,
     itemId,
     personIdFilter,
+    projectIdFilter,
     hf,
     location.search,
     setSearchParams,
@@ -540,6 +557,13 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
         return false;
       }
 
+      if (
+        projectIdFilter != null &&
+        Number(projectId) !== Number(projectIdFilter)
+      ) {
+        return false;
+      }
+
       const projectTitle = normalizeFaText(
         projectId ? projectsMap.get(projectId) || `#${projectId}` : "",
       );
@@ -564,7 +588,14 @@ const [personIdFilter, setPersonIdFilter] = useState(initial.pid ?? null);
 
       return true;
     });
-  }, [headers, hf, projectsMap, personsMap, personIdFilter]);
+  }, [
+    headers,
+    hf,
+    projectsMap,
+    personsMap,
+    personIdFilter,
+    projectIdFilter,
+  ]);
 
 
   // when filters change: reset page and mark auto-pick

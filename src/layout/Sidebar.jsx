@@ -3,6 +3,7 @@ import { NavLink } from "react-router-dom";
 
 const nav = [
   { to: "/", label: "داشبورد" },
+  { to: "/document-archives", label: "بایگانی اسناد" },
   { to: "/persons", label: "اشخاص" },
   { to: "/item-categories", label: "دسته‌بندی‌ها" },
   { to: "/items", label: "کالا/خدمات" },

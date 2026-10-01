@@ -316,6 +316,15 @@ export default function TransactionsListPage() {
   const [personsMap, setPersonsMap] = useState({});
   const [projectsMap, setProjectsMap] = useState({});
 
+  const hasClientSideFilters = useMemo(
+    () =>
+      Object.entries(cf).some(
+        ([key, value]) =>
+          key !== "amountPaid" && normalizeText(value) !== "",
+      ),
+    [cf],
+  );
+
   useEffect(() => {
   const parsed = parseStateFromSearchParams(searchParams);
 
@@ -390,16 +399,47 @@ useEffect(() => {
     setLoading(true);
 
     try {
-      const response = await getTransactions({
-        page: nextPage,
-        size,
+      const requestSize = hasClientSideFilters ? 200 : size;
+      const firstResponse = normalizePageLike(await getTransactions({
+        page: hasClientSideFilters ? 0 : nextPage,
+        size: requestSize,
         q: "",
         ...exactFilters,
         amountPaid: cf.amountPaid,
-      });
+      }));
+
+      let response = firstResponse;
+
+      // Text filters need the complete server result before local filtering.
+      // Otherwise each page is filtered separately and matches get scattered.
+      if (hasClientSideFilters && firstResponse.totalPages > 1) {
+        const remainingPages = await Promise.all(
+          Array.from(
+            { length: firstResponse.totalPages - 1 },
+            (_, index) =>
+              getTransactions({
+                page: index + 1,
+                size: requestSize,
+                q: "",
+                ...exactFilters,
+                amountPaid: cf.amountPaid,
+              }),
+          ),
+        );
+
+        response = {
+          ...firstResponse,
+          content: [
+            ...(firstResponse.content || []),
+            ...remainingPages.flatMap(
+              (result) => normalizePageLike(result).content || [],
+            ),
+          ],
+        };
+      }
 
       if (requestId === latestRequestRef.current) {
-        setData(normalizePageLike(response));
+        setData(response);
       }
     } catch (error) {
       if (requestId !== latestRequestRef.current) {
@@ -423,7 +463,7 @@ useEffect(() => {
       }
     }
   },
-  [page, size, exactFilters , cf.amountPaid,],
+  [page, size, exactFilters, cf.amountPaid, hasClientSideFilters],
 );
 
   useEffect(() => {
@@ -547,6 +587,24 @@ const filteredSortedRows = useMemo(() => {
     return 0;
   });
 }, [data.content, cf, sort, rowValue]);
+
+const visibleRows = useMemo(
+  () =>
+    hasClientSideFilters
+      ? filteredSortedRows.slice(page * size, (page + 1) * size)
+      : filteredSortedRows,
+  [filteredSortedRows, hasClientSideFilters, page, size],
+);
+
+const displayedTotalPages = hasClientSideFilters
+  ? Math.ceil(filteredSortedRows.length / size)
+  : data.totalPages || 0;
+
+useEffect(() => {
+  if (page > 0 && page >= displayedTotalPages) {
+    setPage(Math.max(displayedTotalPages - 1, 0));
+  }
+}, [page, displayedTotalPages]);
 
   function toggleSort(key) {
     setSort((prev) => {
@@ -834,14 +892,14 @@ const filteredSortedRows = useMemo(() => {
                   در حال بارگذاری...
                 </td>
               </tr>
-            ) : filteredSortedRows.length === 0 ? (
+            ) : visibleRows.length === 0 ? (
               <tr>
                 <td colSpan={showRelatedAmount ? 14 : 13} className="py-4 text-center text-zinc-500">
                   موردی یافت نشد.
                 </td>
               </tr>
             ) : (
-              filteredSortedRows.map((r, idx) => {
+              visibleRows.map((r, idx) => {
                 const rowNo = page * size + idx + 1;
                 return (
                   <tr key={r.id} className="border-b last:border-b-0">
@@ -955,7 +1013,7 @@ const filteredSortedRows = useMemo(() => {
 
       <Pagination
         page={page}
-        totalPages={data.totalPages || 0}
+        totalPages={displayedTotalPages}
         onPage={setPage}
       />
 

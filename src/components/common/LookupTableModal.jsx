@@ -65,9 +65,9 @@ export default function LookupTableModal({
 
         <div className="text-xs text-zinc-500">تعداد: {filtered.length}</div>
 
-        <div className="overflow-auto border rounded-xl">
+        <div className="max-h-[55dvh] overflow-auto border rounded-xl">
           <table className="w-full text-sm">
-            <thead className="bg-zinc-50 text-zinc-600">
+            <thead className="sticky top-0 z-10 bg-zinc-50 text-zinc-600">
               <tr className="border-b">
                 {columns.map((c) => (
                   <th key={c.key} className="py-2 px-3 text-right whitespace-nowrap">

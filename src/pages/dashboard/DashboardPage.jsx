@@ -668,6 +668,7 @@ export default function DashboardPage() {
           <tr className="text-xs text-zinc-600">
             <th className="px-3 py-3 text-right">مسیر پروژه</th>
             <th className="px-3 py-3 text-left">جمع هزینه</th>
+            <th className="px-3 py-3 text-left">جمع بدهی</th>
           </tr>
         </thead>
 
@@ -684,6 +685,10 @@ export default function DashboardPage() {
             const totalExpense =
               project.totalExpense ??
               project.total_expense;
+
+            const totalDebt =
+              project.totalDebt ??
+              project.total_debt;
 
             return (
               <tr key={projectId} className="border-t">
@@ -708,6 +713,19 @@ export default function DashboardPage() {
                     title="نمایش هزینه‌های این پروژه"
                   >
                     {formatNumber(totalExpense)}
+                  </button>
+                </td>
+
+                <td className="px-3 py-3 text-left font-mono">
+                  <button
+                    type="button"
+                    className="font-semibold text-blue-600 hover:underline"
+                    onClick={() =>
+                      openInNewTab(`/debts?projectId=${projectId}`)
+                    }
+                    title="نمایش بدهی‌های این پروژه"
+                  >
+                    {formatNumber(totalDebt)}
                   </button>
                 </td>
               </tr>
