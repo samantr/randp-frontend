@@ -22,6 +22,7 @@ export async function getTransactions({
   fromPid = null,
   toPid = null,
   transactionType = "",
+  paymentType = "",
   from = "",
   to = "",
   amountPaid = "",
@@ -49,6 +50,8 @@ export async function getTransactions({
   if (toPid != null) {
     params.toPid = toPid;
   }
+
+  if (paymentType?.trim()) params.paymentType = paymentType.trim();
 
   if (transactionType?.trim()) {
     params.transactionType = transactionType.trim();

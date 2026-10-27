@@ -2,8 +2,10 @@ import React, { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 
 import {
+  downloadDashboardExcel,
   downloadPersonOperationsExcel,
   getDashboardSummary,
+  getFutureChequePayments,
   getItemCategoriesSummary,
   getLastRefresh,
   getPersonPayables,
@@ -36,7 +38,8 @@ function formatNumber(value) {
 }
 
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  const date = new Date();
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
 function addDaysISO(iso, days) {
@@ -141,8 +144,13 @@ export default function DashboardPage() {
 
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [appliedRange, setAppliedRange] = useState(null);
 
   const [kpis, setKpis] = useState(null);
+  const [futureCheques, setFutureCheques] = useState([]);
+  const [futureChequesFrom, setFutureChequesFrom] = useState("");
+  const [futureChequesError, setFutureChequesError] = useState(false);
   const [lastRefresh, setLastRefresh] = useState(null);
 
   const [personsSummary, setPersonsSummary] = useState([]);
@@ -193,8 +201,16 @@ export default function DashboardPage() {
     }
 
     setLoading(true);
+    setFutureChequesError(false);
+    const chequeFrom = addDaysISO(todayISO(), 1);
+    setFutureChequesFrom(chequeFrom);
 
     const requests = [
+      {
+        key: "futureCheques",
+        label: "چک‌های سررسید آینده",
+        request: getFutureChequePayments({ from: chequeFrom }),
+      },
       {
         key: "summary",
         label: "خلاصه داشبورد",
@@ -236,6 +252,10 @@ export default function DashboardPage() {
         const { key, label } = requests[index];
 
         if (result.status === "rejected") {
+          if (key === "futureCheques") {
+            setFutureCheques([]);
+            setFutureChequesError(true);
+          }
           console.error(`[Dashboard] ${key} failed`, result.reason);
           toast.error(
             `${label}: ${getApiErrorMessage(result.reason) || "خطا"}`,
@@ -244,6 +264,7 @@ export default function DashboardPage() {
         }
 
         const data = result.value;
+        if (key === "futureCheques") setFutureCheques(data || []);
 
         if (key === "summary") {
           setKpis(data);
@@ -279,8 +300,30 @@ export default function DashboardPage() {
           );
         }
       });
+      setAppliedRange({ from, to });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function onExportDashboard() {
+    if (!appliedRange || loading || refreshing || exporting) return;
+    if (from !== appliedRange.from || to !== appliedRange.to) {
+      toast.error("ابتدا بازه تاریخ را اعمال کنید");
+      return;
+    }
+
+    setExporting(true);
+    try {
+      await downloadDashboardExcel({
+        ...appliedRange,
+        chequesFrom: futureChequesFrom,
+      });
+      toast.success("فایل اکسل داشبورد آماده شد");
+    } catch (error) {
+      toast.error(getApiErrorMessage(error) || "خطا در ساخت خروجی اکسل داشبورد");
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -423,6 +466,18 @@ export default function DashboardPage() {
 
           <button
             type="button"
+            className="rounded-lg border border-emerald-600 px-4 py-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+            onClick={onExportDashboard}
+            disabled={loading || refreshing || exporting || !appliedRange ||
+              from !== appliedRange.from || to !== appliedRange.to}
+            title={appliedRange && (from !== appliedRange.from || to !== appliedRange.to)
+              ? "ابتدا بازه تاریخ را اعمال کنید" : "خروجی اکسل از بخش‌های داشبورد"}
+          >
+            {exporting ? "در حال ساخت اکسل..." : "خروجی اکسل"}
+          </button>
+
+          <button
+            type="button"
             className="rounded-lg bg-black px-4 py-2 text-sm text-white hover:bg-black/90 disabled:opacity-50"
             onClick={onRefreshMart}
             disabled={refreshing}
@@ -479,6 +534,60 @@ export default function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      <Section
+        title="چک‌های سررسید آینده"
+        subtitle="چک‌های ثبت‌شده از فردا به بعد، به تفکیک سررسید؛ مستقل از بازه تاریخ بالای صفحه"
+      >
+        {loading ? (
+          <div className="py-3 text-sm text-zinc-500">در حال دریافت...</div>
+        ) : futureChequesError ? (
+          <div role="alert" className="py-3 text-sm text-red-600">
+            دریافت اطلاعات چک‌ها ناموفق بود.
+            <button type="button" onClick={loadAll} className="mr-3 underline">تلاش دوباره</button>
+          </div>
+        ) : futureCheques.length === 0 ? (
+          <div className="py-3 text-sm text-zinc-500">چکی با سررسید آینده ثبت نشده است.</div>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+              <span className="text-sm">
+                تعداد چک‌ها: {formatNumber(futureCheques.reduce((sum, row) => sum + Number(row.chequeCount), 0))}
+                {" | "}جمع مبلغ: {formatNumber(futureCheques.reduce((sum, row) => sum + Number(row.totalAmount), 0))}
+              </span>
+              <a className="text-sm font-semibold text-blue-600 hover:underline"
+                href={`/transactions?paymentType=CHK&from=${futureChequesFrom}`}
+                target="_blank" rel="noopener noreferrer">نمایش همه تراکنش‌های چکی</a>
+            </div>
+            <div className="max-h-[360px] overflow-auto rounded-xl border">
+              <table className="w-full min-w-[550px] text-sm">
+                <thead className="sticky top-0 bg-zinc-50">
+                  <tr>
+                    <th className="px-3 py-3 text-right">سررسید</th>
+                    <th className="px-3 py-3 text-right">تعداد چک</th>
+                    <th className="px-3 py-3 text-right">جمع مبلغ</th>
+                    <th className="px-3 py-3 text-right">تراکنش‌ها</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {futureCheques.map((row) => (
+                    <tr key={row.dateDue} className="border-t hover:bg-zinc-50">
+                      <td className="px-3 py-3">{isoToPersianDateObject(row.dateDue)?.format("YYYY/MM/DD")}</td>
+                      <td className="px-3 py-3">{formatNumber(row.chequeCount)}</td>
+                      <td className="px-3 py-3 font-semibold">{formatNumber(row.totalAmount)}</td>
+                      <td className="px-3 py-3">
+                        <a className="font-semibold text-blue-600 hover:underline"
+                          href={`/transactions?paymentType=CHK&from=${row.dateDue}&to=${row.dateDue}`}
+                          target="_blank" rel="noopener noreferrer">نمایش تراکنش‌ها</a>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </Section>
 
       <Section
         title="خلاصه اشخاص"

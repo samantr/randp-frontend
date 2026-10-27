@@ -115,6 +115,7 @@ const EMPTY_CF = {
 };
 
 const EMPTY_EXACT_FILTERS = {
+  paymentType: "",
   transactionId: null,
   projectId: null,
   categoryId: null,
@@ -169,6 +170,7 @@ function parseStateFromSearchParams(sp) {
     categoryId: parseNullableInt(sp.get("categoryId")),
     fromPid: parseNullableInt(sp.get("fromPid")),
     toPid: parseNullableInt(sp.get("toPid")),
+    paymentType: sp.get("paymentType") ?? "",
     transactionType: sp.get("transactionType") ?? "",
     from: sp.get("from") ?? "",
     to: sp.get("to") ?? "",
@@ -218,6 +220,8 @@ function buildSearchParamsObject({
   if (filters.toPid != null) {
     params.toPid = String(filters.toPid);
   }
+
+  if (filters.paymentType?.trim()) params.paymentType = filters.paymentType.trim();
 
   if (filters.transactionType?.trim()) {
     params.transactionType =
@@ -639,6 +643,13 @@ useEffect(() => {
         <div className="text-xl font-bold">تراکنش‌ها (دریافت/پرداخت)</div>
         <Button onClick={() => setQuickAddOpen(true)}>+ جدید</Button>
       </div>
+
+      {exactFilters.paymentType === "CHK" && (
+        <div className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm" dir="rtl">
+          چک‌ها — از سررسید {isoToJalaliText(exactFilters.from)}
+          {exactFilters.to ? ` تا ${isoToJalaliText(exactFilters.to)}` : " به بعد"}
+        </div>
+      )}
 
       <div className="mb-3 rounded-2xl border bg-white p-3 overflow-auto">
         <table className="w-full text-sm ">

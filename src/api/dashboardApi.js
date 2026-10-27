@@ -15,6 +15,25 @@ export async function getDashboardSummary({ from, to }) {
   return res.data;
 }
 
+export async function downloadDashboardExcel({ from, to, chequesFrom }) {
+  const res = await api.get("/api/v1/dashboard/export.xlsx", {
+    params: { from, to, chequesFrom },
+    responseType: "blob",
+  });
+
+  const blob = new Blob([res.data], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `dashboard-${from}-to-${to}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => window.URL.revokeObjectURL(url), 1000);
+}
+
 export async function getDashboardCashflow({ from, to }) {
   const res = await api.get("/api/v1/dashboard/cashflow", { params: { from, to } });
   return res.data;
@@ -132,5 +151,12 @@ export async function getUnallocatedOverview({
     params: { from, to, limit },
   });
 
+  return res.data;
+}
+
+export async function getFutureChequePayments({ from }) {
+  const res = await api.get("/api/v1/dashboard/future-cheque-payments", {
+    params: { from },
+  });
   return res.data;
 }
